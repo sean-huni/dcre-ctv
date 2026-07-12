@@ -12,7 +12,8 @@ public interface ValidationLogRepo extends CrudRepository<ValidationLogEntity, U
 
     @Modifying
     @Query("""
-            UPSERT INTO validation_log (arrival_id, sequence, outcome)
-            VALUES (:#{#e.arrivalId}, :#{#e.sequence}, :#{#e.outcome})""")
+            INSERT INTO validation_log (arrival_id, sequence, outcome)
+            VALUES (:#{#e.arrivalId}, :#{#e.sequence}, :#{#e.outcome})
+            ON CONFLICT (arrival_id, sequence) DO UPDATE SET outcome = EXCLUDED.outcome""")
     void upsert(@Param("e") ValidationLogEntity e);
 }
