@@ -10,6 +10,11 @@
          production writers; DDL mirrors the toolkit's fixture DDL under
          R-35, R-20 window semantics enforced application-side). -->
     <changeSet id="001-validation-log" author="dcre">
+        <!-- Converges from any bootstrap order: dcre-prg mints these tables
+             IF NOT EXISTS as a bootstrap guard when its clock fires first. -->
+        <preConditions onFail="MARK_RAN">
+            <not><tableExists tableName="validation_log"/></not>
+        </preConditions>
         <createTable tableName="validation_log">
             <column name="id" type="UUID" defaultValueComputed="gen_random_uuid()">
                 <constraints primaryKey="true" nullable="false"/>
