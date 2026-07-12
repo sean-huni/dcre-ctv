@@ -5,7 +5,7 @@
         xsi:schemaLocation="http://www.liquibase.org/xml/ns/dbchangelog
         http://www.liquibase.org/xml/ns/dbchangelog/dbchangelog-latest.xsd">
 
-    <changeSet id="003-layering-columns" author="dcre">
+    <changeSet id="003-layering-columns-ctv" author="dcre">
         <sql>
             ALTER TABLE validation_log ADD COLUMN IF NOT EXISTS version BIGINT NOT NULL DEFAULT 0;
             ALTER TABLE validation_log ADD COLUMN IF NOT EXISTS created_at TIMESTAMPTZ NOT NULL DEFAULT now();
