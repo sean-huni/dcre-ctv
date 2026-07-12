@@ -15,6 +15,9 @@ import java.util.Set;
  * dup e2e -> account exists -> account active -> account cap ->
  * mandate exists -> contract match -> mandate status -> effective ->
  * expiry -> mandate cap. Mandate layer applies to the DC flow only.
+ * ENDO deltas (A-20 draft, SCRUM-32) [SYNTHETIC-CONTRACT R-35]: unknown
+ * account and NULL cap pass through (AIS create-if-absent downstream);
+ * everything else, including over-cap on existing accounts, is unchanged.
  */
 public final class VerdictChain {
 
@@ -41,7 +44,9 @@ public final class VerdictChain {
         }
         Account account = accounts.get(entry.creditorAccount());
         if (account == null) {
-            return CtvOutcome.FAIL_ACCOUNT_NOT_FOUND;
+            // [SYNTHETIC-CONTRACT R-35] A-20 draft: on ENDO an unknown account
+            // passes through; AIS creates it downstream (create-if-absent).
+            return dcFlow ? CtvOutcome.FAIL_ACCOUNT_NOT_FOUND : CtvOutcome.PASS;
         }
         if (!"ACTIVE".equals(account.processStatus())) {
             return CtvOutcome.FAIL_ACCOUNT_NOT_ACTIVE;
@@ -49,7 +54,10 @@ public final class VerdictChain {
         boolean balanceCarrying = ProductType.fromProductCode(account.productCode()) == ProductType.BALANCE_CARRYING;
         BigDecimal cap = balanceCarrying ? account.balance() : account.maxCreditLimit();
         if (cap == null) {
-            return CtvOutcome.FAIL_ACCOUNT_NOT_FOUND;
+            // [SYNTHETIC-CONTRACT R-35] A-20 draft: on ENDO a NULL cap marks a
+            // freshly-creatable account; the cap check applies post-init, so it
+            // passes through. DC keeps the oracle's FAIL_ACCOUNT_NOT_FOUND.
+            return dcFlow ? CtvOutcome.FAIL_ACCOUNT_NOT_FOUND : CtvOutcome.PASS;
         }
         if (entry.amount().compareTo(cap) > 0) {
             return balanceCarrying ? CtvOutcome.FAIL_EXCEEDS_RF_BALANCE : CtvOutcome.FAIL_EXCEEDS_CC_LIMIT;
