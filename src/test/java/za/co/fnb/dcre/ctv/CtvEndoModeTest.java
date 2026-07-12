@@ -1,6 +1,12 @@
 package za.co.fnb.dcre.ctv;
 
+import ch.qos.logback.classic.Level;
+import ch.qos.logback.classic.Logger;
+import ch.qos.logback.classic.spi.ILoggingEvent;
+import ch.qos.logback.core.read.ListAppender;
 import org.junit.jupiter.api.Test;
+import org.slf4j.LoggerFactory;
+import za.co.fnb.dcre.ctv.service.ValidationService;
 import org.springframework.batch.core.BatchStatus;
 import org.springframework.batch.core.job.Job;
 import org.springframework.batch.core.job.JobExecution;
@@ -16,6 +22,7 @@ import org.testcontainers.utility.DockerImageName;
 
 import java.math.BigDecimal;
 import java.util.HashMap;
+import java.util.List;
 import java.util.Map;
 import java.util.UUID;
 
@@ -65,6 +72,11 @@ class CtvEndoModeTest {
         seedReferenceData();
         seedSpine(arrival);
 
+        Logger validationLogger = (Logger) LoggerFactory.getLogger(ValidationService.class);
+        ListAppender<ILoggingEvent> warns = new ListAppender<>();
+        warns.start();
+        validationLogger.addAppender(warns);
+
         JobExecution run = jobOperator.start(ctvJob, new JobParametersBuilder()
                 .addString("arrival.id", arrival.toString(), true)
                 .toJobParameters());
@@ -85,6 +97,18 @@ class CtvEndoModeTest {
                     actual.put(r.getInt(1), r.getString(2));
                 }, arrival);
         assertEquals(expected, actual, "ENDO verdicts per A-20 draft [SYNTHETIC-CONTRACT R-35]");
+
+        // R-38 exclusion visibility: exactly one FAIL verdict -> exactly one WARN at decision time.
+        List<String> exclusionWarns = warns.list.stream()
+                .filter(e -> e.getLevel() == Level.WARN)
+                .map(ILoggingEvent::getFormattedMessage)
+                .filter(m -> m.contains("excluded stage=CTV"))
+                .toList();
+        assertEquals(1, exclusionWarns.size(), "one WARN per FAIL verdict (R-38)");
+        assertEquals("excluded stage=CTV arrival=" + arrival + " seq=5 e2e=ENDO-E2E-00005"
+                + " reason=CTV_FAIL_EXCEEDS_RF_BALANCE", exclusionWarns.get(0),
+                "uniform R-38 WARN shape");
+        validationLogger.detachAppender(warns);
     }
 
     void seedReferenceData() {

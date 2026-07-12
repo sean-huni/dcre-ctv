@@ -1,5 +1,7 @@
 package za.co.fnb.dcre.ctv.service;
 
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 import za.co.fnb.dcre.ctv.data.model.TxEntryView;
@@ -31,6 +33,8 @@ import java.util.UUID;
  */
 @Service
 public class ValidationService {
+
+    private static final Logger log = LoggerFactory.getLogger(ValidationService.class);
 
     public sealed interface Result {
         record FileFatal(String reason) implements Result { }
@@ -83,6 +87,12 @@ public class ValidationService {
             CtvOutcome outcome = VerdictChain.classify(entry, accountsByNumber, mandatesByAccount,
                     seen, today, dcFlow);
             anyFail |= outcome != CtvOutcome.PASS;
+            if (outcome != CtvOutcome.PASS) {
+                // R-38 exclusion visibility: WARN at decision time; validation_log
+                // remains the durable record.
+                log.warn("excluded stage=CTV arrival={} seq={} e2e={} reason=CTV_{}",
+                        arrivalId, row.getSequence(), row.getE2e(), outcome.name());
+            }
             verdicts.upsert(ValidationLogEntity.of(arrivalId, row.getSequence(), outcome.name()));
         }
         return new Result.Verdicts(anyFail);
