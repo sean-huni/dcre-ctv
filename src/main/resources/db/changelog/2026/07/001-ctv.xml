@@ -1,0 +1,27 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<databaseChangeLog
+        xmlns="http://www.liquibase.org/xml/ns/dbchangelog"
+        xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+        xsi:schemaLocation="http://www.liquibase.org/xml/ns/dbchangelog
+        http://www.liquibase.org/xml/ns/dbchangelog/dbchangelog-latest.xsd">
+
+    <!-- validation_log: CTV single writer (R-04). account + mandate are
+         SYNTHETIC-CONTRACT fixture stores in M2 (AIS and MSR become the
+         production writers; DDL mirrors the toolkit's fixture DDL under
+         R-35, R-20 window semantics enforced application-side). -->
+    <changeSet id="001-validation-log" author="dcre">
+        <createTable tableName="validation_log">
+            <column name="id" type="UUID" defaultValueComputed="gen_random_uuid()">
+                <constraints primaryKey="true" nullable="false"/>
+            </column>
+            <column name="arrival_id" type="UUID"><constraints nullable="false"/></column>
+            <column name="sequence" type="INT"><constraints nullable="false"/></column>
+            <column name="outcome" type="VARCHAR(32)"><constraints nullable="false"/></column>
+            <column name="detail" type="VARCHAR(256)"/>
+        </createTable>
+        <addUniqueConstraint tableName="validation_log" columnNames="arrival_id, sequence"
+                             constraintName="uq_validation_arrival_sequence"/>
+    </changeSet>
+
+
+</databaseChangeLog>
