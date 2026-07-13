@@ -12,7 +12,10 @@ import org.testcontainers.utility.DockerImageName;
  * one static CockroachDB container per context.
  */
 @CucumberContextConfiguration
-@SpringBootTest(properties = {"spring.batch.job.enabled=false", "dcre.exchange-root=build/test-exchange"})
+@SpringBootTest(properties = {"spring.batch.job.enabled=false", "dcre.exchange-root=build/test-exchange",
+        // R-41 acceptance-mode fixture: FNBRF01 overridden to PARTIAL, every
+        // other client (e.g. FNBCC01) falls to the ALL_OR_NOTHING default.
+        "dcre.ctv.acceptance-mode.clients.[FNBRF01]=PARTIAL"})
 public class CucumberSpringConfig {
 
     static final CockroachContainer CRDB =

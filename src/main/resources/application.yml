@@ -22,3 +22,10 @@ dcre:
   amount-scale: ${DCRE_AMOUNT_SCALE:2}
   v1-enabled: ${DCRE_V1_ENABLED:false}
   flow-dc: ${DCRE_FLOW_DC:true}
+  ctv:
+    max-partitions: ${DCRE_CTV_MAX_PARTITIONS:5}
+    acceptance-mode:
+      default: ${DCRE_CTV_ACCEPTANCE_MODE_DEFAULT:ALL_OR_NOTHING}
+      # per-client override map (defaults empty), e.g.
+      # clients:
+      #   FNBRF01: PARTIAL

@@ -6,19 +6,32 @@ import org.springframework.batch.core.step.StepContribution;
 import org.springframework.batch.core.step.tasklet.Tasklet;
 import org.springframework.batch.infrastructure.repeat.RepeatStatus;
 import org.springframework.stereotype.Component;
+import za.co.fnb.dcre.ctv.config.AcceptanceModeProperties;
+import za.co.fnb.dcre.ctv.config.AcceptanceModeProperties.Mode;
+import za.co.fnb.dcre.ctv.data.repo.ValidationLogRepo;
 
 import java.util.UUID;
 
-/** Thin entry adapter (3-tier, configuration.md point 21). */
+/**
+ * Verdict rollup (R-41): aggregates the durable validation_log into the job's
+ * business exit status by the client's acceptance mode. ctvVerdict in the
+ * execution context keeps the pre-M7 content-verdict semantics
+ * (BUSINESS_PARTIAL / BUSINESS_ACCEPTED); the acceptance decision rides the
+ * exit status, which the seam file carries to AGT.
+ */
 @Component
 public class CtvTasklet implements Tasklet {
 
-    public static final String EXIT_FILE_FATAL = "FILE_FATAL";
+    public static final String EXIT_BUSINESS_FILE_REJECTED = "BUSINESS_FILE_REJECTED";
+    public static final String EXIT_BUSINESS_PARTIAL = "BUSINESS_PARTIAL";
+    public static final String EXIT_BUSINESS_ACCEPTED = "BUSINESS_ACCEPTED";
 
-    private final ValidationService service;
+    private final ValidationLogRepo verdicts;
+    private final AcceptanceModeProperties acceptanceMode;
 
-    public CtvTasklet(ValidationService service) {
-        this.service = service;
+    public CtvTasklet(ValidationLogRepo verdicts, AcceptanceModeProperties acceptanceMode) {
+        this.verdicts = verdicts;
+        this.acceptanceMode = acceptanceMode;
     }
 
     @Override
@@ -26,14 +39,14 @@ public class CtvTasklet implements Tasklet {
         UUID arrivalId = UUID.fromString(
                 (String) chunkContext.getStepContext().getJobParameters().get("arrival.id"));
         var context = chunkContext.getStepContext().getStepExecution().getJobExecution().getExecutionContext();
-        switch (service.validate(arrivalId)) {
-            case ValidationService.Result.FileFatal fatal -> {
-                context.putString("fileFatalReason", fatal.reason());
-                contribution.setExitStatus(new ExitStatus(EXIT_FILE_FATAL));
-            }
-            case ValidationService.Result.Verdicts verdicts -> context.putString("ctvVerdict",
-                    verdicts.anyFail() ? "BUSINESS_PARTIAL" : "BUSINESS_ACCEPTED");
-        }
+
+        int fails = verdicts.countFailsForArrival(arrivalId);
+        String contentVerdict = fails > 0 ? EXIT_BUSINESS_PARTIAL : EXIT_BUSINESS_ACCEPTED;
+        context.putString("ctvVerdict", contentVerdict);
+
+        Mode mode = acceptanceMode.modeFor(context.getString("clientToken", ""));
+        String exit = fails > 0 && mode == Mode.ALL_OR_NOTHING ? EXIT_BUSINESS_FILE_REJECTED : contentVerdict;
+        contribution.setExitStatus(new ExitStatus(exit));
         return RepeatStatus.FINISHED;
     }
 }

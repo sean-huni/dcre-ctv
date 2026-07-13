@@ -34,8 +34,16 @@ public interface ValidationLogRepo extends CrudRepository<ValidationLogEntity, U
             ON CONFLICT (arrival_id, sequence) DO NOTHING""")
     int insertContentDupVerdicts(@Param("arrivalId") UUID arrivalId);
 
-    @Query("SELECT sequence FROM validation_log WHERE arrival_id = :arrivalId")
-    List<Integer> sequencesForArrival(@Param("arrivalId") UUID arrivalId);
+    /**
+     * Range-scoped so partition workers never read each other's rows: the only
+     * pre-existing verdicts inside a range come from the dup scan or a replay.
+     */
+    @Query("""
+            SELECT sequence FROM validation_log
+            WHERE arrival_id = :arrivalId AND sequence BETWEEN :fromSeq AND :toSeq""")
+    List<Integer> sequencesForArrivalInRange(@Param("arrivalId") UUID arrivalId,
+                                             @Param("fromSeq") int fromSeq,
+                                             @Param("toSeq") int toSeq);
 
     @Query("SELECT count(*) FROM validation_log WHERE arrival_id = :arrivalId AND outcome <> 'PASS'")
     int countFailsForArrival(@Param("arrivalId") UUID arrivalId);

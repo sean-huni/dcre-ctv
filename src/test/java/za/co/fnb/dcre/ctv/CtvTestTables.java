@@ -44,6 +44,7 @@ public final class CtvTestTables {
                     id UUID NOT NULL DEFAULT gen_random_uuid() PRIMARY KEY,
                     arrival_id UUID NOT NULL UNIQUE,
                     tx_count INT NOT NULL,
+                    initg_pty VARCHAR(35) NOT NULL,
                     business_date VARCHAR(8) NOT NULL)""");
         jdbc.execute("""
                 CREATE TABLE IF NOT EXISTS tx_entry (
@@ -82,15 +83,25 @@ public final class CtvTestTables {
     }
 
     public static void insertHeader(JdbcTemplate jdbc, UUID arrival, int txCount) {
-        jdbc.update("INSERT INTO tx_header (arrival_id, tx_count, business_date) VALUES (?,?,?)",
-                arrival, txCount, BUSINESS_DATE);
+        insertHeader(jdbc, arrival, txCount, "FNBCC01");
+    }
+
+    public static void insertHeader(JdbcTemplate jdbc, UUID arrival, int txCount, String initgPty) {
+        jdbc.update("INSERT INTO tx_header (arrival_id, tx_count, initg_pty, business_date) VALUES (?,?,?,?)",
+                arrival, txCount, initgPty, BUSINESS_DATE);
     }
 
     public static void insertEntry(JdbcTemplate jdbc, UUID arrival, int sequence, String e2e,
                                    String account, String contract, String amount) {
+        insertEntry(jdbc, arrival, sequence, e2e, account, contract, amount, null);
+    }
+
+    public static void insertEntry(JdbcTemplate jdbc, UUID arrival, int sequence, String e2e,
+                                   String account, String contract, String amount, String contentHash) {
         jdbc.update("""
-                INSERT INTO tx_entry (arrival_id, sequence, e2e, creditor_account, contract_ref, amount)
-                VALUES (?,?,?,?,?,?)""",
-                arrival, sequence, e2e, account, contract, new BigDecimal(amount));
+                INSERT INTO tx_entry (arrival_id, sequence, e2e, creditor_account, contract_ref,
+                                      amount, content_hash)
+                VALUES (?,?,?,?,?,?,?)""",
+                arrival, sequence, e2e, account, contract, new BigDecimal(amount), contentHash);
     }
 }

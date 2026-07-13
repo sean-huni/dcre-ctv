@@ -9,4 +9,9 @@ import java.util.UUID;
 public interface TxEntryViewRepo extends CrudRepository<TxEntryView, UUID> {
 
     List<TxEntryView> findByArrivalIdOrderBySequence(UUID arrivalId);
+
+    /** Partition range load (R-41): sequence bounds inclusive. */
+    List<TxEntryView> findByArrivalIdAndSequenceBetweenOrderBySequence(UUID arrivalId, int fromSeq, int toSeq);
+
+    long countByArrivalId(UUID arrivalId);
 }

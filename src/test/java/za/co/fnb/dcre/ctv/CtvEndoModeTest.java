@@ -154,6 +154,7 @@ class CtvEndoModeTest {
                     id UUID NOT NULL DEFAULT gen_random_uuid() PRIMARY KEY,
                     arrival_id UUID NOT NULL UNIQUE,
                     tx_count INT NOT NULL,
+                    initg_pty VARCHAR(35) NOT NULL,
                     business_date VARCHAR(8) NOT NULL)""");
         jdbc.execute("""
                 CREATE TABLE IF NOT EXISTS tx_entry (
@@ -163,8 +164,8 @@ class CtvEndoModeTest {
                     contract_ref VARCHAR(14), amount DECIMAL(18,2) NOT NULL,
                     content_hash CHAR(64),
                     UNIQUE (arrival_id, sequence))""");
-        jdbc.update("UPSERT INTO tx_header (arrival_id, tx_count, business_date) VALUES (?,?,?)",
-                arrival, 5, "20260711");
+        jdbc.update("UPSERT INTO tx_header (arrival_id, tx_count, initg_pty, business_date) VALUES (?,?,?,?)",
+                arrival, 5, "FNBEN01", "20260711");
         insertEntry(arrival, 1, "ENDO-E2E-00001", "62999999999901", "150.00"); // unknown
         insertEntry(arrival, 2, "ENDO-E2E-00002", "62999999999902", "220.00"); // unknown
         insertEntry(arrival, 3, "ENDO-E2E-00003", "62000000000001", "100.00"); // under cap

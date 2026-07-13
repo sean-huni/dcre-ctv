@@ -13,9 +13,11 @@ public class TxHeaderView {
     private UUID id;
     private UUID arrivalId;
     private Integer txCount;
+    private String initgPty;
     private String businessDate;
 
     public UUID getArrivalId() { return arrivalId; }
     public Integer getTxCount() { return txCount; }
+    public String getInitgPty() { return initgPty; }
     public String getBusinessDate() { return businessDate; }
 }
