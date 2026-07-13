@@ -20,7 +20,6 @@ import za.co.fnb.dcre.platform.model.CtvOutcome;
 import java.time.LocalDate;
 import java.time.format.DateTimeFormatter;
 import java.util.HashMap;
-import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
@@ -46,16 +45,18 @@ public class ValidationService {
     private final AccountRepo accounts;
     private final MandateRepo mandates;
     private final ValidationLogRepo verdicts;
+    private final DupScanService dupScan;
     private final boolean dcFlow;
 
     public ValidationService(TxHeaderViewRepo headers, TxEntryViewRepo entries, AccountRepo accounts,
-                             MandateRepo mandates, ValidationLogRepo verdicts,
+                             MandateRepo mandates, ValidationLogRepo verdicts, DupScanService dupScan,
                              @Value("${dcre.flow-dc:true}") boolean dcFlow) {
         this.headers = headers;
         this.entries = entries;
         this.accounts = accounts;
         this.mandates = mandates;
         this.verdicts = verdicts;
+        this.dupScan = dupScan;
         this.dcFlow = dcFlow;
     }
 
@@ -68,6 +69,11 @@ public class ValidationService {
             return new Result.FileFatal("spine count " + spine.size() + " != declared " + header.getTxCount());
         }
 
+        // R-41: dup rules run set-based FIRST; the per-tx pass never re-visits
+        // a row the scan (or an earlier run, R-05 replay) already verdicted.
+        dupScan.scan(arrivalId);
+        Set<Integer> alreadyVerdicted = Set.copyOf(verdicts.sequencesForArrival(arrivalId));
+
         Map<String, Account> accountsByNumber = new HashMap<>();
         accounts.findAll().forEach(a -> accountsByNumber.put(a.getAccountNumber(),
                 new Account(a.getAccountNumber(), a.getProductCode(), a.getBalance(),
@@ -79,14 +85,14 @@ public class ValidationService {
                             m.getExpiryDate(), m.getMaxCollectionAmount()));
         }
 
-        Set<String> seen = new HashSet<>();
-        boolean anyFail = false;
         for (TxEntryView row : spine) {
+            if (alreadyVerdicted.contains(row.getSequence())) {
+                continue;
+            }
             Entry entry = new Entry(row.getSequence(), row.getE2e(), row.getCreditorAccount(),
                     row.getContractRef(), row.getAmount());
             CtvOutcome outcome = VerdictChain.classify(entry, accountsByNumber, mandatesByAccount,
-                    seen, today, dcFlow);
-            anyFail |= outcome != CtvOutcome.PASS;
+                    today, dcFlow);
             if (outcome != CtvOutcome.PASS) {
                 // R-38 exclusion visibility: WARN at decision time; validation_log
                 // remains the durable record.
@@ -95,6 +101,8 @@ public class ValidationService {
             }
             verdicts.upsert(ValidationLogEntity.of(arrivalId, row.getSequence(), outcome.name()));
         }
-        return new Result.Verdicts(anyFail);
+        // Aggregate over the durable record: dup-scan verdicts and replayed
+        // rows count toward the business verdict exactly like fresh ones.
+        return new Result.Verdicts(verdicts.countFailsForArrival(arrivalId) > 0);
     }
 }

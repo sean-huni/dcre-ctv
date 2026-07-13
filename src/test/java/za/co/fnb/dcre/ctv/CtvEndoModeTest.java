@@ -161,6 +161,7 @@ class CtvEndoModeTest {
                     arrival_id UUID NOT NULL, sequence INT NOT NULL,
                     e2e VARCHAR(35) NOT NULL, creditor_account VARCHAR(23) NOT NULL,
                     contract_ref VARCHAR(14), amount DECIMAL(18,2) NOT NULL,
+                    content_hash CHAR(64),
                     UNIQUE (arrival_id, sequence))""");
         jdbc.update("UPSERT INTO tx_header (arrival_id, tx_count, business_date) VALUES (?,?,?)",
                 arrival, 5, "20260711");

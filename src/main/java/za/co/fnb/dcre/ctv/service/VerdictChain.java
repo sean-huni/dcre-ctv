@@ -7,14 +7,16 @@ import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.util.List;
 import java.util.Map;
-import java.util.Set;
 
 /**
  * The R-19 item-tier precedence chain, ported from the fixture toolkit's
  * verifier classify() (the dev-normative oracle under R-35):
- * dup e2e -> account exists -> account active -> account cap ->
+ * account exists -> account active -> account cap ->
  * mandate exists -> contract match -> mandate status -> effective ->
  * expiry -> mandate cap. Mandate layer applies to the DC flow only.
+ * Duplicate rules (e2e and content hash) run BEFORE this chain as the
+ * set-based SQL dup scan (DupScanService, R-41); rows verdicted there are
+ * never re-classified here.
  * ENDO deltas (A-20 draft, SCRUM-32) [SYNTHETIC-CONTRACT R-35]: unknown
  * account and NULL cap pass through (AIS create-if-absent downstream);
  * everything else, including over-cap on existing accounts, is unchanged.
@@ -38,10 +40,7 @@ public final class VerdictChain {
 
     public static CtvOutcome classify(Entry entry, Map<String, Account> accounts,
                                       Map<String, List<Mandate>> mandatesByAccount,
-                                      Set<String> seenE2e, LocalDate today, boolean dcFlow) {
-        if (!seenE2e.add(entry.e2e())) {
-            return CtvOutcome.FAIL_DUPLICATE_E2E; // first-wins, in-file scope (R-25)
-        }
+                                      LocalDate today, boolean dcFlow) {
         Account account = accounts.get(entry.creditorAccount());
         if (account == null) {
             // [SYNTHETIC-CONTRACT R-35] A-20 draft: on ENDO an unknown account

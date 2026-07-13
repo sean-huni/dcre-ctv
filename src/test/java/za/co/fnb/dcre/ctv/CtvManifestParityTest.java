@@ -118,6 +118,7 @@ class CtvManifestParityTest {
                     amount_raw VARCHAR(15) NOT NULL, amount DECIMAL(18,2) NOT NULL,
                     branch_code VARCHAR(11), debtor_name VARCHAR(35),
                     debtor_account VARCHAR(23), acc_type_seq VARCHAR(8),
+                    content_hash CHAR(64),
                     UNIQUE (arrival_id, sequence))""");
         List<String> lines = Files.readAllLines(Path.of("src/test/resources/dcre_copybook_v2_dc_sample.txt"));
         String header = lines.get(0);
