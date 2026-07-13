@@ -54,11 +54,4 @@ public interface ValidationLogRepo extends CrudRepository<ValidationLogEntity, U
             WHERE vl.arrival_id = :arrivalId AND vl.outcome LIKE 'FAIL_DUPLICATE%'
             ORDER BY vl.sequence""", rowMapperClass = DupVerdictRowMapper.class)
     List<DupVerdictRow> findDupVerdictRows(@Param("arrivalId") UUID arrivalId);
-
-    @Modifying
-    @Query("""
-            INSERT INTO validation_log (arrival_id, sequence, outcome)
-            VALUES (:#{#e.arrivalId}, :#{#e.sequence}, :#{#e.outcome})
-            ON CONFLICT (arrival_id, sequence) DO UPDATE SET outcome = EXCLUDED.outcome""")
-    void upsert(@Param("e") ValidationLogEntity e);
 }

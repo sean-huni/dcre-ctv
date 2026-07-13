@@ -60,9 +60,10 @@ public class CtvJobConfig {
             ValidationService service,
             @Value("#{jobParameters['arrival.id']}") String arrivalId,
             @Value("#{stepExecutionContext['fromSeq']}") Long fromSeq,
-            @Value("#{stepExecutionContext['toSeq']}") Long toSeq) {
+            @Value("#{stepExecutionContext['toSeq']}") Long toSeq,
+            @Value("#{jobExecutionContext['asOfTimestamp']}") String asOfTimestamp) {
         return new ValidationRangeTasklet(service, UUID.fromString(arrivalId),
-                fromSeq.intValue(), toSeq.intValue());
+                fromSeq.intValue(), toSeq.intValue(), asOfTimestamp);
     }
 
     @Bean
@@ -126,7 +127,7 @@ public class CtvJobConfig {
             String jobName = System.getenv().getOrDefault("JOB_NAME", "local-" + execution.getId());
             String verdict = execution.getExecutionContext().containsKey("fileFatalReason")
                     ? "BUSINESS_FILE_FATAL"
-                    : execution.getExitStatus().getExitCode();
+                    : execution.getExecutionContext().getString("seamVerdict", "BUSINESS_ACCEPTED");
             OutcomeFileWriter.write(Path.of(exchangeRoot), jobName, verdict);
         }
     }

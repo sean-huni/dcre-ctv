@@ -7,8 +7,7 @@ import org.springframework.stereotype.Service;
 import za.co.fnb.dcre.ctv.data.model.TxEntryView;
 import za.co.fnb.dcre.ctv.data.model.TxHeaderView;
 import za.co.fnb.dcre.ctv.data.model.ValidationLogEntity;
-import za.co.fnb.dcre.ctv.data.repo.AccountRepo;
-import za.co.fnb.dcre.ctv.data.repo.MandateRepo;
+import za.co.fnb.dcre.ctv.data.repo.ReferenceSnapshotDao;
 import za.co.fnb.dcre.ctv.data.repo.TxEntryViewRepo;
 import za.co.fnb.dcre.ctv.data.repo.TxHeaderViewRepo;
 import za.co.fnb.dcre.ctv.data.repo.ValidationLogBatchDao;
@@ -21,7 +20,6 @@ import za.co.fnb.dcre.platform.model.CtvOutcome;
 import java.time.LocalDate;
 import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
-import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
@@ -31,10 +29,11 @@ import java.util.stream.Collectors;
 /**
  * Business tier (configuration.md point 21): the R-19 two-tier verdict pass
  * over one arrival, split for R-41 partitioning. Tier 1 (header/count check)
- * runs once in the headerCheck step; the dup scan runs set-based once; tier 2
- * runs per sequence range against a range-scoped snapshot (Fugu F51 as-of
- * semantics preserved: reference data is read once per range inside one step
- * transaction). Upserts keyed (arrival_id, sequence): R-05.
+ * runs once in the headerCheck step and captures the F51 as-of snapshot
+ * timestamp; the dup scan runs set-based once; tier 2 runs per sequence range
+ * against reference data read AS OF that single timestamp, so every partition
+ * sees one consistent snapshot even under a mid-job account/mandate mutation
+ * (Fugu F51). Upserts keyed (arrival_id, sequence): R-05.
  */
 @Service
 public class ValidationService {
@@ -43,31 +42,29 @@ public class ValidationService {
 
     public sealed interface HeaderCheck {
         record FileFatal(String reason) implements HeaderCheck { }
-        record Ok(int txCount, String clientToken) implements HeaderCheck { }
+        record Ok(int txCount, String clientToken, String asOfTimestamp) implements HeaderCheck { }
     }
 
     private final TxHeaderViewRepo headers;
     private final TxEntryViewRepo entries;
-    private final AccountRepo accounts;
-    private final MandateRepo mandates;
+    private final ReferenceSnapshotDao referenceSnapshot;
     private final ValidationLogRepo verdicts;
     private final ValidationLogBatchDao verdictBatch;
     private final boolean dcFlow;
 
-    public ValidationService(TxHeaderViewRepo headers, TxEntryViewRepo entries, AccountRepo accounts,
-                             MandateRepo mandates, ValidationLogRepo verdicts,
+    public ValidationService(TxHeaderViewRepo headers, TxEntryViewRepo entries,
+                             ReferenceSnapshotDao referenceSnapshot, ValidationLogRepo verdicts,
                              ValidationLogBatchDao verdictBatch,
                              @Value("${dcre.flow-dc:true}") boolean dcFlow) {
         this.headers = headers;
         this.entries = entries;
-        this.accounts = accounts;
-        this.mandates = mandates;
+        this.referenceSnapshot = referenceSnapshot;
         this.verdicts = verdicts;
         this.verdictBatch = verdictBatch;
         this.dcFlow = dcFlow;
     }
 
-    /** Tier 1: header presence + declared-vs-carried count (R-19). */
+    /** Tier 1: header presence + declared-vs-carried count (R-19), plus F51 snapshot capture. */
     public HeaderCheck checkHeader(UUID arrivalId) {
         TxHeaderView header = headers.findByArrivalId(arrivalId).orElseThrow();
         long spineCount = entries.countByArrivalId(arrivalId);
@@ -75,15 +72,17 @@ public class ValidationService {
             return new HeaderCheck.FileFatal("spine count " + spineCount + " != declared " + header.getTxCount());
         }
         String clientToken = header.getInitgPty() == null ? "" : header.getInitgPty().strip();
-        return new HeaderCheck.Ok(header.getTxCount(), clientToken);
+        return new HeaderCheck.Ok(header.getTxCount(), clientToken, referenceSnapshot.snapshotTimestamp());
     }
 
     /**
-     * Tier 2 for one partition range (sequence bounds inclusive). Rows already
-     * verdicted by the dup scan (or an earlier run, R-05 replay) are skipped.
-     * Returns the number of FAIL verdicts written by this range.
+     * Tier 2 for one partition range (sequence bounds inclusive), against the
+     * account/mandate snapshot AS OF {@code asOfTimestamp} (captured once at
+     * headerCheck, shared by every range). Rows already verdicted by the dup
+     * scan (or an earlier run, R-05 replay) are skipped. Returns the number of
+     * FAIL verdicts written by this range.
      */
-    public int validateRange(UUID arrivalId, int fromSeq, int toSeq) {
+    public int validateRange(UUID arrivalId, int fromSeq, int toSeq, String asOfTimestamp) {
         TxHeaderView header = headers.findByArrivalId(arrivalId).orElseThrow();
         LocalDate today = LocalDate.parse(header.getBusinessDate().strip(), DateTimeFormatter.BASIC_ISO_DATE);
 
@@ -101,16 +100,9 @@ public class ValidationService {
         Set<String> accountNumbers = rows.stream()
                 .map(TxEntryView::getCreditorAccount)
                 .collect(Collectors.toSet());
-        Map<String, Account> accountsByNumber = new HashMap<>();
-        accounts.findByAccountNumberIn(accountNumbers).forEach(a -> accountsByNumber.put(a.getAccountNumber(),
-                new Account(a.getAccountNumber(), a.getProductCode(), a.getBalance(),
-                        a.getMaxCreditLimit(), a.getProcessStatus())));
-        Map<String, List<Mandate>> mandatesByAccount = new HashMap<>();
-        for (var m : mandates.findByCreditorAccountInOrderByMandateRef(accountNumbers)) {
-            mandatesByAccount.computeIfAbsent(m.getCreditorAccount(), k -> new ArrayList<>())
-                    .add(new Mandate(m.getContractRef(), m.getStatus(), m.getStartDate(),
-                            m.getExpiryDate(), m.getMaxCollectionAmount()));
-        }
+        Map<String, Account> accountsByNumber = referenceSnapshot.accountsByNumber(asOfTimestamp, accountNumbers);
+        Map<String, List<Mandate>> mandatesByAccount =
+                referenceSnapshot.mandatesByAccount(asOfTimestamp, accountNumbers);
 
         List<ValidationLogEntity> batch = new ArrayList<>(rows.size());
         int fails = 0;

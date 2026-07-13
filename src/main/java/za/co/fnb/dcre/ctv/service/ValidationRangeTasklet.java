@@ -18,17 +18,20 @@ public class ValidationRangeTasklet implements Tasklet {
     private final UUID arrivalId;
     private final int fromSeq;
     private final int toSeq;
+    private final String asOfTimestamp;
 
-    public ValidationRangeTasklet(ValidationService service, UUID arrivalId, int fromSeq, int toSeq) {
+    public ValidationRangeTasklet(ValidationService service, UUID arrivalId, int fromSeq, int toSeq,
+                                  String asOfTimestamp) {
         this.service = service;
         this.arrivalId = arrivalId;
         this.fromSeq = fromSeq;
         this.toSeq = toSeq;
+        this.asOfTimestamp = asOfTimestamp;
     }
 
     @Override
     public RepeatStatus execute(StepContribution contribution, ChunkContext chunkContext) {
-        service.validateRange(arrivalId, fromSeq, toSeq);
+        service.validateRange(arrivalId, fromSeq, toSeq, asOfTimestamp);
         return RepeatStatus.FINISHED;
     }
 }

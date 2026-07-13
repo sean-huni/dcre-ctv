@@ -38,6 +38,7 @@ public class HeaderCheckTasklet implements Tasklet {
             case ValidationService.HeaderCheck.Ok ok -> {
                 context.putLong("txCount", ok.txCount());
                 context.putString("clientToken", ok.clientToken());
+                context.putString("asOfTimestamp", ok.asOfTimestamp());
             }
         }
         return RepeatStatus.FINISHED;

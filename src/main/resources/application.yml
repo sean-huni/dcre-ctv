@@ -26,6 +26,11 @@ dcre:
     max-partitions: ${DCRE_CTV_MAX_PARTITIONS:5}
     acceptance-mode:
       default: ${DCRE_CTV_ACCEPTANCE_MODE_DEFAULT:ALL_OR_NOTHING}
-      # per-client override map (defaults empty), e.g.
-      # clients:
-      #   FNBRF01: PARTIAL
+      # Per-client override map (defaults empty; the empty default lives in
+      # AcceptanceModeProperties, so no `clients:` key is declared here). No
+      # DCRE_* env var is wired for the map: set per-client mode via a yaml
+      # override. Client tokens are UPPERCASE, so the key MUST be bracketed to
+      # survive relaxed binding, e.g. as yaml
+      #   clients:
+      #     "[FNBRF01]": PARTIAL
+      # or as a property  dcre.ctv.acceptance-mode.clients.[FNBRF01]=PARTIAL

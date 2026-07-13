@@ -16,8 +16,11 @@ import java.util.UUID;
  * Verdict rollup (R-41): aggregates the durable validation_log into the job's
  * business exit status by the client's acceptance mode. ctvVerdict in the
  * execution context keeps the pre-M7 content-verdict semantics
- * (BUSINESS_PARTIAL / BUSINESS_ACCEPTED); the acceptance decision rides the
- * exit status, which the seam file carries to AGT.
+ * (BUSINESS_PARTIAL / BUSINESS_ACCEPTED). The acceptance decision (which may be
+ * BUSINESS_FILE_REJECTED) rides the step exit status AND is mirrored into the
+ * job execution context as seamVerdict: the SeamListener runs afterJob, before
+ * the flow's terminal exit code is applied to the JobExecution, so it must read
+ * the durable context value, not getExitStatus().
  */
 @Component
 public class CtvTasklet implements Tasklet {
@@ -46,6 +49,7 @@ public class CtvTasklet implements Tasklet {
 
         Mode mode = acceptanceMode.modeFor(context.getString("clientToken", ""));
         String exit = fails > 0 && mode == Mode.ALL_OR_NOTHING ? EXIT_BUSINESS_FILE_REJECTED : contentVerdict;
+        context.putString("seamVerdict", exit);
         contribution.setExitStatus(new ExitStatus(exit));
         return RepeatStatus.FINISHED;
     }
