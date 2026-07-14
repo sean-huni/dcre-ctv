@@ -3,6 +3,7 @@ package za.co.fnb.dcre.ctv.config;
 import org.junit.jupiter.api.Test;
 import org.springframework.boot.autoconfigure.context.ConfigurationPropertiesAutoConfiguration;
 import org.springframework.boot.context.properties.EnableConfigurationProperties;
+import org.springframework.boot.test.context.ConfigDataApplicationContextInitializer;
 import org.springframework.boot.test.context.runner.ApplicationContextRunner;
 import org.springframework.context.annotation.Configuration;
 import za.co.fnb.dcre.ctv.config.AcceptanceModeProperties.Mode;
@@ -39,6 +40,23 @@ class AcceptanceModePropertiesTest {
     void startupFailsOnUnknownDefaultMode() {
         runner.withPropertyValues("dcre.ctv.acceptance-mode.default=BOGUS")
                 .run(context -> assertThat(context).hasFailed());
+    }
+
+    /**
+     * SCRUM-42: FNBCC02 PARTIAL is a COMMITTED working default in application.yml
+     * (AGT cannot pass extra env to stage pods yet, so the in-cluster partial-flow
+     * check must work without env passthrough). Binds the real classpath yml.
+     */
+    @Test
+    void committedYmlMapsFnbcc02ToPartialAndLeavesDefaultAllOrNothing() {
+        runner.withInitializer(new ConfigDataApplicationContextInitializer())
+                .run(context -> {
+                    assertThat(context).hasNotFailed();
+                    AcceptanceModeProperties props = context.getBean(AcceptanceModeProperties.class);
+                    assertEquals(Mode.PARTIAL, props.modeFor("FNBCC02"));       // committed override
+                    assertEquals(Mode.ALL_OR_NOTHING, props.getDefault());      // default untouched
+                    assertEquals(Mode.ALL_OR_NOTHING, props.modeFor("FNBRF01")); // unmapped -> default
+                });
     }
 
     @Test
