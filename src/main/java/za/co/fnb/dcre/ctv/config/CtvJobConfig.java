@@ -37,6 +37,14 @@ import java.util.UUID;
 @EnableConfigurationProperties(AcceptanceModeProperties.class)
 public class CtvJobConfig {
 
+    /**
+     * CRDB 40001 retry for the steps that WRITE business rows (dup scan +
+     * partition workers): the observed aborts hit the chunk-commit boundary,
+     * which only a stepOperations-level handler sees (CrdbRetryExceptionHandler).
+     * Read-only steps (headerCheck, rollup) stay without it: retry, never skip.
+     */
+    private final CrdbRetryExceptionHandler crdbRetry = new CrdbRetryExceptionHandler();
+
     @Bean
     public Step headerCheckStep(JobRepository repo, PlatformTransactionManager tx, HeaderCheckTasklet tasklet) {
         return new StepBuilder("headerCheckStep", repo).tasklet(tasklet, tx).build();
@@ -44,7 +52,7 @@ public class CtvJobConfig {
 
     @Bean
     public Step dupScanStep(JobRepository repo, PlatformTransactionManager tx, DupScanTasklet tasklet) {
-        return new StepBuilder("dupScanStep", repo).tasklet(tasklet, tx).build();
+        return new StepBuilder("dupScanStep", repo).tasklet(tasklet, tx).exceptionHandler(crdbRetry).build();
     }
 
     @Bean
@@ -69,7 +77,8 @@ public class CtvJobConfig {
     @Bean
     public Step validationWorkerStep(JobRepository repo, PlatformTransactionManager tx,
                                      ValidationRangeTasklet validationRangeTasklet) {
-        return new StepBuilder("validationWorkerStep", repo).tasklet(validationRangeTasklet, tx).build();
+        return new StepBuilder("validationWorkerStep", repo).tasklet(validationRangeTasklet, tx)
+                .exceptionHandler(crdbRetry).build();
     }
 
     @Bean
