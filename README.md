@@ -58,7 +58,7 @@ Spring Batch metadata lives under the `CTV_BATCH_` prefix (A-39b) with `initiali
 ```bash
 # platform libs published to Maven Local first (see Prerequisites)
 ./gradlew build          # compiles + full test suite (Docker required)
-java -jar build/libs/ctv-2.0.jar arrival.id=<uuid>
+java -jar build/libs/ctv-2.0.jar 'arrival.id=<uuid>'
 ```
 
 A clean clone runs with NO `.env`: committed defaults point at `localhost:26257/dcre_collections` and the dcre-infra exchange directory. Boot passes command-line args through as job parameters; the JVM exit code carries the Batch outcome (R-34).
