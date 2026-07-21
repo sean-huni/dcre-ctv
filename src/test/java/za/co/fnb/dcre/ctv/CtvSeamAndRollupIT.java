@@ -93,14 +93,18 @@ class CtvSeamAndRollupIT {
                 .toJobParameters());
     }
 
-    /** Exactly one job ran since clearOutcomes, so read the single seam file it wrote. */
-    private String seamContent() throws Exception {
+    /** Exactly one job ran since clearOutcomes, so return the single seam file it wrote. */
+    private Path seamFile() throws Exception {
         Path outcomes = EXCHANGE.resolve("outcomes");
         try (var files = Files.list(outcomes)) {
             List<Path> written = files.toList();
             assertEquals(1, written.size(), "expected exactly one seam file, got " + written);
-            return Files.readAllLines(written.get(0)).get(0);
+            return written.get(0);
         }
+    }
+
+    private String seamContent() throws Exception {
+        return Files.readAllLines(seamFile()).get(0);
     }
 
     @Test
@@ -149,6 +153,22 @@ class CtvSeamAndRollupIT {
         assertEquals("BUSINESS_ACCEPTED", seamContent());
         assertEquals(List.of(), jdbc.queryForList(
                 "SELECT outcome FROM validation_log WHERE arrival_id=?", String.class, arrival));
+    }
+
+    /**
+     * SCRUM-58 self-describing local seam names: without a JOB_NAME env (the
+     * K8s Job name), the seam file is local-ctv-&lt;executionId&gt;, so a
+     * local/dev outcome names its owning module fleet-wide.
+     */
+    @Test
+    void runWithoutJobNameEnvWritesSelfDescribingLocalSeamName() throws Exception {
+        CtvTestTables.create(jdbc);
+        UUID arrival = UUID.randomUUID();
+        CtvTestTables.insertHeader(jdbc, arrival, 0, "FNBCC01");
+
+        JobExecution run = run(arrival);
+        assertEquals(BatchStatus.COMPLETED, run.getStatus());
+        assertEquals("local-ctv-" + run.getId(), seamFile().getFileName().toString());
     }
 
     /**

@@ -1,12 +1,10 @@
 package za.co.fnb.dcre.ctv.config;
 
-import org.springframework.batch.core.BatchStatus;
 import org.springframework.batch.core.configuration.annotation.JobScope;
 import org.springframework.batch.core.configuration.annotation.StepScope;
 import org.springframework.batch.core.job.Job;
 import org.springframework.batch.core.job.JobExecution;
 import org.springframework.batch.core.job.builder.JobBuilder;
-import org.springframework.batch.core.listener.JobExecutionListener;
 import org.springframework.batch.core.repository.JobRepository;
 import org.springframework.batch.core.step.Step;
 import org.springframework.batch.core.step.builder.StepBuilder;
@@ -22,10 +20,9 @@ import za.co.fnb.dcre.ctv.service.DupScanTasklet;
 import za.co.fnb.dcre.ctv.service.HeaderCheckTasklet;
 import za.co.fnb.dcre.ctv.service.ValidationRangeTasklet;
 import za.co.fnb.dcre.ctv.service.ValidationService;
-import za.co.fnb.dcre.platform.batch.OutcomeFileWriter;
+import za.co.fnb.dcre.platform.batch.OutcomeSeamListener;
 import za.co.fnb.dcre.platform.batch.PartitionSizer;
 
-import java.nio.file.Path;
 import java.util.UUID;
 
 /**
@@ -102,7 +99,7 @@ public class CtvJobConfig {
     public Job ctvJob(JobRepository repo, Step headerCheckStep, Step dupScanStep, Step validationStep,
                       Step rollupStep, @Value("${dcre.exchange-root}") String exchangeRoot) {
         return new JobBuilder("ctvJob", repo)
-                .listener(new SeamListener(exchangeRoot))
+                .listener(new OutcomeSeamListener("ctv", exchangeRoot, CtvJobConfig::seamVerdict))
                 .start(headerCheckStep)
                     .on(HeaderCheckTasklet.EXIT_FILE_FATAL).end(HeaderCheckTasklet.EXIT_FILE_FATAL)
                 .from(headerCheckStep).on("FAILED").fail()
@@ -121,23 +118,15 @@ public class CtvJobConfig {
     }
 
     /**
-     * Seam per R-33/R-35: FILE_FATAL from tier 1 stays byte-identical
-     * (fileFatalReason in the execution context); otherwise the rollup's
-     * acceptance-mode exit status (BUSINESS_FILE_REJECTED / BUSINESS_PARTIAL /
-     * BUSINESS_ACCEPTED) is what AGT reads.
+     * Seam verdict per R-33/R-35 (supplied to the shared OutcomeSeamListener,
+     * SCRUM-58): FILE_FATAL from tier 1 stays byte-identical (fileFatalReason
+     * in the execution context); otherwise the rollup's acceptance-mode exit
+     * status (BUSINESS_FILE_REJECTED / BUSINESS_PARTIAL / BUSINESS_ACCEPTED)
+     * is what AGT reads.
      */
-    record SeamListener(String exchangeRoot) implements JobExecutionListener {
-
-        @Override
-        public void afterJob(JobExecution execution) {
-            if (execution.getStatus() != BatchStatus.COMPLETED) {
-                return; // technical death: exit code + K8s condition are the witnesses
-            }
-            String jobName = System.getenv().getOrDefault("JOB_NAME", "local-" + execution.getId());
-            String verdict = execution.getExecutionContext().containsKey("fileFatalReason")
-                    ? "BUSINESS_FILE_FATAL"
-                    : execution.getExecutionContext().getString("seamVerdict", "BUSINESS_ACCEPTED");
-            OutcomeFileWriter.write(Path.of(exchangeRoot), jobName, verdict);
-        }
+    private static String seamVerdict(final JobExecution execution) {
+        return execution.getExecutionContext().containsKey("fileFatalReason")
+                ? "BUSINESS_FILE_FATAL"
+                : execution.getExecutionContext().getString("seamVerdict", "BUSINESS_ACCEPTED");
     }
 }
