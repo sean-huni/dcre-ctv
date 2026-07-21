@@ -4,7 +4,7 @@ Collections Transaction Validator: DB-only DCRE stage (R-30) that validates ever
 
 ## What it does
 
-CTV is the `CRR -> CTV` stage of the DCRE Collections DAG: on the DC flow it forks to `CDE || CIR` afterwards; on ENDO the fork goes through AIS first. AGT launches it as a short-lived Kubernetes Job per arrival (identifying job parameter `arrival.id`, a UUID); it has no file I/O of its own and transitions strictly via the shared CockroachDB (R-30). The job runs four phases: a tier-1 header/count check (`FILE_FATAL` on mismatch), a set-based SQL duplicate scan, a partitioned per-transaction validation pass replaying the R-19 verdict model, and a verdict rollup that applies per-client acceptance mode (R-41). The rollup verdict is staged to an outcome seam file that AGT reads.
+CTV is the `CRR -> CTV` stage of both request DAGs: the DC Collections flow forks to `CDE || CIR` afterwards; the ENDO Payments flow continues through AIS to CIR only (SCRUM-69: no CDE on the pay flow). AGT launches it as a short-lived Kubernetes Job per arrival (identifying job parameter `arrival.id`, a UUID); it has no file I/O of its own and transitions strictly via the shared CockroachDB (R-30). The job runs four phases: a tier-1 header/count check (`FILE_FATAL` on mismatch), a set-based SQL duplicate scan, a partitioned per-transaction validation pass replaying the R-19 verdict model, and a verdict rollup that applies per-client acceptance mode (R-41). The rollup verdict is staged to an outcome seam file that AGT reads.
 
 ## Architecture and principles
 
