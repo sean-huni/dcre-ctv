@@ -61,7 +61,7 @@ Spring Batch metadata lives under the `CTV_BATCH_` prefix (A-39b) with `initiali
 java -jar build/libs/ctv-2.0.jar 'arrival.id=<uuid>'
 ```
 
-A clean clone runs with NO `.env`: committed defaults point at `localhost:26257/dcre_collections` and the dcre-infra exchange directory. Boot passes command-line args through as job parameters; the JVM exit code carries the Batch outcome (R-34).
+A clean clone runs with NO `.env`: committed defaults point at `localhost:26257/dcre_col` and the dcre-infra exchange directory. Boot passes command-line args through as job parameters; the JVM exit code carries the Batch outcome (R-34).
 
 ## Configuration
 
@@ -69,7 +69,7 @@ Spring Boot 4.1.0, Java 25 toolchain, `application.yml` only. Env overrides:
 
 | Env var | Default | Purpose |
 |---|---|---|
-| `DCRE_DB_URL` | `jdbc:postgresql://localhost:26257/dcre_collections?sslmode=disable` | shared CockroachDB |
+| `DCRE_DB_URL` | `jdbc:postgresql://localhost:26257/dcre_col?sslmode=disable` | shared CockroachDB |
 | `DCRE_DB_USER` / `DCRE_DB_PASSWORD` | `root` / empty | DB credentials |
 | `DCRE_EXCHANGE_ROOT` | `../../../../../infra/dcre-infra/exchange` | outcome seam directory |
 | `DCRE_FLOW_DC` | `true` | DC vs ENDO verdict semantics (A-20) |
