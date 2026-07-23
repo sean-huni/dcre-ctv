@@ -20,6 +20,7 @@ import za.co.fnb.dcre.ctv.service.DupScanTasklet;
 import za.co.fnb.dcre.ctv.service.HeaderCheckTasklet;
 import za.co.fnb.dcre.ctv.service.ValidationRangeTasklet;
 import za.co.fnb.dcre.ctv.service.ValidationService;
+import za.co.fnb.dcre.platform.batch.HeartbeatWriter;
 import za.co.fnb.dcre.platform.batch.OutcomeSeamListener;
 import za.co.fnb.dcre.platform.batch.PartitionSizer;
 
@@ -97,9 +98,11 @@ public class CtvJobConfig {
 
     @Bean
     public Job ctvJob(JobRepository repo, Step headerCheckStep, Step dupScanStep, Step validationStep,
-                      Step rollupStep, @Value("${dcre.exchange-root}") String exchangeRoot) {
+                      Step rollupStep, HeartbeatWriter heartbeatWriter,
+                      @Value("${dcre.exchange-root}") String exchangeRoot) {
         return new JobBuilder("ctvJob", repo)
                 .listener(new OutcomeSeamListener("ctv", exchangeRoot, CtvJobConfig::seamVerdict))
+                .listener(heartbeatWriter)
                 .start(headerCheckStep)
                     .on(HeaderCheckTasklet.EXIT_FILE_FATAL).end(HeaderCheckTasklet.EXIT_FILE_FATAL)
                 .from(headerCheckStep).on("FAILED").fail()
