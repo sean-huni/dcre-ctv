@@ -7,10 +7,6 @@ spring:
     url: ${DCRE_DB_URL:jdbc:postgresql://localhost:26257/dcre_col?sslmode=disable}
     username: ${DCRE_DB_USER:root}
     password: ${DCRE_DB_PASSWORD:}
-  batch:
-    jdbc:
-      table-prefix: CTV_BATCH_
-      initialize-schema: never
   liquibase:
     change-log: classpath:db/changelog/db.changelog-master.xml
     # Shared DB, per-service migration history (same isolation idea as CTV_BATCH_)
@@ -22,6 +18,11 @@ dcre:
   amount-scale: ${DCRE_AMOUNT_SCALE:2}
   v1-enabled: ${DCRE_V1_ENABLED:false}
   flow-dc: ${DCRE_FLOW_DC:true}
+  batch:
+    table-prefix: CTV_BATCH_
+  agtops-db-url: ${DCRE_AGTOPS_DB_URL:jdbc:postgresql://localhost:26257/agt_ops?sslmode=disable}
+  agtops-db-user: ${DCRE_AGTOPS_DB_USER:root}
+  agtops-db-password: ${DCRE_AGTOPS_DB_PASSWORD:}
   ctv:
     max-partitions: ${DCRE_CTV_MAX_PARTITIONS:5}
     acceptance-mode:
