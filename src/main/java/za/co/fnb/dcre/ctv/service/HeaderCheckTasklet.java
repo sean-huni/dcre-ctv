@@ -39,6 +39,7 @@ public class HeaderCheckTasklet implements Tasklet {
                 context.putLong("txCount", ok.txCount());
                 context.putString("clientToken", ok.clientToken());
                 context.putString("asOfTimestamp", ok.asOfTimestamp());
+                context.putString("mandateAsOfTimestamp", ok.mandateAsOfTimestamp());
             }
         }
         return RepeatStatus.FINISHED;

@@ -114,7 +114,7 @@ class CtvManifestParityTest {
                     arrival_id UUID NOT NULL, sequence INT NOT NULL,
                     record_type VARCHAR(2) NOT NULL, e2e_raw VARCHAR(35) NOT NULL,
                     e2e VARCHAR(35) NOT NULL, creditor_account VARCHAR(23) NOT NULL,
-                    contract_ref VARCHAR(14), currency VARCHAR(3) NOT NULL,
+                    contract_ref VARCHAR(14), mandate_ref VARCHAR(35), currency VARCHAR(3) NOT NULL,
                     amount_raw VARCHAR(15) NOT NULL, amount DECIMAL(18,2) NOT NULL,
                     branch_code VARCHAR(11), debtor_name VARCHAR(35),
                     debtor_account VARCHAR(23), acc_type_seq VARCHAR(8),
