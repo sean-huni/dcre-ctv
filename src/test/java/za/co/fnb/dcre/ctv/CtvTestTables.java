@@ -51,7 +51,7 @@ public final class CtvTestTables {
                     id UUID NOT NULL DEFAULT gen_random_uuid() PRIMARY KEY,
                     arrival_id UUID NOT NULL, sequence INT NOT NULL,
                     e2e VARCHAR(35) NOT NULL, creditor_account VARCHAR(23) NOT NULL,
-                    contract_ref VARCHAR(14), amount DECIMAL(18,2) NOT NULL,
+                    contract_ref VARCHAR(14), mandate_ref VARCHAR(35), amount DECIMAL(18,2) NOT NULL,
                     content_hash CHAR(64),
                     UNIQUE (arrival_id, sequence))""");
     }

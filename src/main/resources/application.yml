@@ -25,6 +25,18 @@ dcre:
   agtops-db-password: ${DCRE_AGTOPS_DB_PASSWORD:}
   ctv:
     max-partitions: ${DCRE_CTV_MAX_PARTITIONS:5}
+    # M10 T15 (SCRUM-78): DC-flow mandate gate source. legacy = dcre_col mandate
+    # table (current, default, kept until M11 retirement); projection = MSR-owned
+    # dcre_man man_ctv_view (state must be exactly ACCP). The T16 gate env flips
+    # this to projection once the toolkit has seeded dcre_man.
+    mandate-source: ${DCRE_CTV_MANDATE_SOURCE:legacy}
+    # Second, READ-ONLY connection to the dcre_man projection (R-10). Opened
+    # lazily and only in projection mode; dev clean-clone defaults (12FactorApp),
+    # every deployed context overrides via env. NOT the primary spring.datasource.*
+    # creds, so the standing-cluster ctv role holds only SELECT on man_ctv_view.
+    mandates-db-url: ${DCRE_CTV_MANDATES_DB_URL:jdbc:postgresql://localhost:26257/dcre_man?sslmode=disable}
+    mandates-db-user: ${DCRE_CTV_MANDATES_DB_USER:root}
+    mandates-db-password: ${DCRE_CTV_MANDATES_DB_PASSWORD:}
     acceptance-mode:
       default: ${DCRE_CTV_ACCEPTANCE_MODE_DEFAULT:ALL_OR_NOTHING}
       # Per-client override map. No DCRE_* env var is wired for the map: set

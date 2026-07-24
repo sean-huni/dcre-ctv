@@ -67,9 +67,10 @@ public class CtvJobConfig {
             @Value("#{jobParameters['arrival.id']}") String arrivalId,
             @Value("#{stepExecutionContext['fromSeq']}") Long fromSeq,
             @Value("#{stepExecutionContext['toSeq']}") Long toSeq,
-            @Value("#{jobExecutionContext['asOfTimestamp']}") String asOfTimestamp) {
+            @Value("#{jobExecutionContext['asOfTimestamp']}") String asOfTimestamp,
+            @Value("#{jobExecutionContext['mandateAsOfTimestamp']}") String mandateAsOfTimestamp) {
         return new ValidationRangeTasklet(service, UUID.fromString(arrivalId),
-                fromSeq.intValue(), toSeq.intValue(), asOfTimestamp);
+                fromSeq.intValue(), toSeq.intValue(), asOfTimestamp, mandateAsOfTimestamp);
     }
 
     @Bean

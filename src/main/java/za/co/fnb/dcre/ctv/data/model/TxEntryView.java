@@ -17,11 +17,14 @@ public class TxEntryView {
     private String e2e;
     private String creditorAccount;
     private String contractRef;
+    private String mandateRef;
     private BigDecimal amount;
 
     public Integer getSequence() { return sequence; }
     public String getE2e() { return e2e; }
     public String getCreditorAccount() { return creditorAccount; }
     public String getContractRef() { return contractRef; }
+    /** M10 T15: the collection-to-mandate link (CRR tx_entry.mandate_ref); NULL for V1/V2 books. */
+    public String getMandateRef() { return mandateRef; }
     public BigDecimal getAmount() { return amount; }
 }

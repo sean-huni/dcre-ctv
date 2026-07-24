@@ -2,13 +2,15 @@ package za.co.fnb.dcre.ctv;
 
 import org.springframework.boot.autoconfigure.SpringBootApplication;
 import org.springframework.context.annotation.Import;
+import za.co.fnb.dcre.ctv.config.MandatesDatasourceConfig;
 import za.co.fnb.dcre.platform.batch.ExitCodeMain;
 import za.co.fnb.dcre.platform.batch.config.BatchJdbcConfig;
 import za.co.fnb.dcre.platform.batch.config.HeartbeatDatasourceConfig;
 import za.co.fnb.dcre.platform.persistence.JdbcConfig;
 
 @SpringBootApplication
-@Import({JdbcConfig.class, BatchJdbcConfig.class, HeartbeatDatasourceConfig.class})
+@Import({JdbcConfig.class, BatchJdbcConfig.class, HeartbeatDatasourceConfig.class,
+        MandatesDatasourceConfig.class})
 public class CtvApplication {
 
     public static void main(String[] args) {
