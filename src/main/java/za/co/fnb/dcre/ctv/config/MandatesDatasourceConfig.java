@@ -31,27 +31,56 @@ import javax.sql.DataSource;
  * {@code dcre.ctv.mandates-db-user} / {@code dcre.ctv.mandates-db-password} (default
  * {@code root} / blank for the dev clean-clone), NOT the primary {@code
  * spring.datasource.*} creds, so the standing-cluster ctv role can be granted only
- * {@code SELECT} on {@code man_ctv_view} (R-10). The URL default is a dev
- * infrastructure address, so a masking default is safe (12FactorApp clean-clone);
- * every deployed context overrides {@code dcre.ctv.mandates-db-url}. The resolved
- * URL/user is logged once at startup so operators can spot a wired-but-wrong target.
+ * {@code SELECT} on {@code man_ctv_view} (R-10). The resolved URL/user is logged once
+ * at startup so operators can spot a wired-but-wrong target.
+ *
+ * <p><b>The dev default is guarded, not dropped.</b> This javadoc used to claim "every
+ * deployed context overrides {@code dcre.ctv.mandates-db-url}", and nothing did: AGT
+ * shipped no {@code DCRE_CTV_MANDATES_DB_URL}, so an in-cluster CTV in projection mode
+ * quietly aimed the gate at localhost and could not read dcre_man at all (found
+ * 2026-07-26, the same class of bug as mrg's {@code DCRE_COL_DB_URL}). The localhost
+ * default still earns its keep: it is what lets a clean clone boot with no {@code .env}
+ * (12FactorApp Alignment - https://12factor.net/). So it survives for local dev and
+ * becomes FATAL in a pod: if {@code KUBERNETES_SERVICE_HOST} is set (kubelet sets it in
+ * every container) and the url is still the committed dev default, the context fails at
+ * start naming the variable. That keeps {@link #LOCAL_DEV_URL} the single pivot, pinned
+ * to the yml by a parity test, rather than removing the default and breaking the
+ * clean-clone rule for every local run.
  */
 @Configuration(proxyBeanMethods = false)
 public class MandatesDatasourceConfig {
+
+    /** The committed local-dev target; kept verbatim as the placeholder default so a
+     *  clean clone boots with no {@code .env}. Pinned to the yml by a parity test. */
+    static final String LOCAL_DEV_URL = "jdbc:postgresql://localhost:26257/dcre_man?sslmode=disable";
 
     private static final Logger log = LoggerFactory.getLogger(MandatesDatasourceConfig.class);
 
     @Bean
     MandateProjectionDao mandateProjectionDao(
-            @Value("${dcre.ctv.mandates-db-url:jdbc:postgresql://localhost:26257/dcre_man?sslmode=disable}")
+            @Value("${dcre.ctv.mandates-db-url:" + LOCAL_DEV_URL + "}")
             final String url,
             @Value("${dcre.ctv.mandates-db-user:root}") final String user,
-            @Value("${dcre.ctv.mandates-db-password:}") final String password) {
+            @Value("${dcre.ctv.mandates-db-password:}") final String password,
+            @Value("${KUBERNETES_SERVICE_HOST:}") final String clusterApiHost) {
+        requireWiredTargetInCluster(url, clusterApiHost);
         log.info("ctv mandate projection: dcre_man read-only gate url={} user={}", url, user);
         final DataSource dcreMan = DataSourceBuilder.create()
                 .type(SimpleDriverDataSource.class)
                 .driverClassName("org.postgresql.Driver")
                 .url(url).username(user).password(password).build();
         return new MandateProjectionDao(new JdbcTemplate(dcreMan));
+    }
+
+    /** Fail fast in a pod that is still on the local-dev default: CTV would
+     *  otherwise start, log the wrong target, and fail the gate at query time. */
+    private static void requireWiredTargetInCluster(final String url, final String clusterApiHost) {
+        if (clusterApiHost == null || clusterApiHost.isBlank() || !LOCAL_DEV_URL.equals(url)) {
+            return;
+        }
+        throw new IllegalStateException(
+                "set DCRE_CTV_MANDATES_DB_URL: running in-cluster (KUBERNETES_SERVICE_HOST=" + clusterApiHost
+                        + ") on the local-dev dcre_man default " + LOCAL_DEV_URL
+                        + "; the projection mandate gate reads man_ctv_view and localhost is not it");
     }
 }
