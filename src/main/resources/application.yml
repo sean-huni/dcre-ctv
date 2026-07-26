@@ -31,9 +31,14 @@ dcre:
     # this to projection once the toolkit has seeded dcre_man.
     mandate-source: ${DCRE_CTV_MANDATE_SOURCE:legacy}
     # Second, READ-ONLY connection to the dcre_man projection (R-10). Opened
-    # lazily and only in projection mode; dev clean-clone defaults (12FactorApp),
-    # every deployed context overrides via env. NOT the primary spring.datasource.*
-    # creds, so the standing-cluster ctv role holds only SELECT on man_ctv_view.
+    # lazily and only in projection mode; dev clean-clone defaults (12FactorApp).
+    # NOT the primary spring.datasource.* creds, so the standing-cluster ctv role
+    # holds only SELECT on man_ctv_view.
+    # The localhost default is the clean-clone dev target ONLY: MandatesDatasourceConfig
+    # makes it fatal at startup inside a pod, because nothing injected
+    # DCRE_CTV_MANDATES_DB_URL and every in-cluster projection gate aimed at localhost
+    # (2026-07-26). AGT now sets it on every CTV stage pod.
+    # Keep this literal in step with MandatesDatasourceConfig.LOCAL_DEV_URL (parity-tested).
     mandates-db-url: ${DCRE_CTV_MANDATES_DB_URL:jdbc:postgresql://localhost:26257/dcre_man?sslmode=disable}
     mandates-db-user: ${DCRE_CTV_MANDATES_DB_USER:root}
     mandates-db-password: ${DCRE_CTV_MANDATES_DB_PASSWORD:}
