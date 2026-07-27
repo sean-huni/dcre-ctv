@@ -75,6 +75,10 @@ Spring Boot 4.1.0, Java 25 toolchain, `application.yml` only. Env overrides:
 | `DCRE_FLOW_DC` | `true` | DC vs ENDO verdict semantics (A-20) |
 | `DCRE_CTV_MAX_PARTITIONS` | `5` | R-41 validation grid size cap (clamped to cgroup-aware CPU count) |
 | `DCRE_CTV_ACCEPTANCE_MODE_DEFAULT` | `ALL_OR_NOTHING` | R-41 default acceptance mode |
+| `DCRE_CTV_MANDATE_SOURCE` | `legacy` | DC-flow mandate gate source (SCRUM-78/91). `legacy` reads the `mandate` table in `dcre_col`; `projection` reads `man_ctv_view` in `dcre_man` and requires state exactly `ACCP`. Set on every CTV stage pod by AGT from `AGT_CTV_MANDATE_SOURCE` |
+| `DCRE_CTV_MANDATES_DB_URL` | `jdbc:postgresql://localhost:26257/dcre_man?sslmode=disable` | **Startup-fatal in-cluster if left at this default.** JDBC URL of CTV's SECOND, read-only `dcre_man` connection (R-10), opened lazily and only in projection mode. The localhost default exists so a clean clone boots with no `.env`, so `MandatesDatasourceConfig` fails the context at start when `KUBERNETES_SERVICE_HOST` is set and the URL is still that default. The check runs in BOTH modes, not just projection. AGT sets it on every CTV stage pod from `AGT_MAN_SERVICE_DB_URL` |
+| `DCRE_CTV_MANDATES_DB_USER` | `root` | `dcre_man` read-only username. Deliberately NOT the primary `spring.datasource.*` creds, so the standing-cluster ctv role can hold only `SELECT` on `man_ctv_view` |
+| `DCRE_CTV_MANDATES_DB_PASSWORD` | (empty) | `dcre_man` read-only password |
 | `JOB_NAME` | `local-<executionId>` | outcome seam file name (set by AGT) |
 
 Per-client acceptance overrides are yaml-only (no env var is wired for the map) and client tokens are UPPERCASE, so keys MUST be bracketed to survive relaxed binding: `dcre.ctv.acceptance-mode.clients.[FNBCC02]=PARTIAL`. `FNBCC02: PARTIAL` is a committed working default (SCRUM-42) so in-cluster partial-failure scenarios run without env passthrough. `DCRE_AMOUNT_SCALE` and `DCRE_V1_ENABLED` sit in the shared config block but are not consumed by CTV code.
