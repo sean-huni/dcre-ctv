@@ -1,11 +1,11 @@
 package za.co.fnb.dcre.ctv.data.repo;
 
 import org.springframework.jdbc.core.JdbcTemplate;
+import za.co.fnb.dcre.ctv.domain.CcyymmddDate;
 import za.co.fnb.dcre.ctv.service.VerdictChain.MandateProjection;
 
 import javax.sql.DataSource;
 import java.sql.Connection;
-import java.sql.Date;
 import java.sql.PreparedStatement;
 import java.sql.ResultSet;
 import java.sql.SQLException;
@@ -81,13 +81,26 @@ public class MandateProjectionDao {
         return byRef;
     }
 
+    /**
+     * The view's date columns are {@code VARCHAR(8)} CCYYMMDD, so they are read as
+     * STRINGS and parsed. {@code rs.getDate} on them throws
+     * {@code ArrayIndexOutOfBoundsException: Index 8 out of bounds for length 8} out of
+     * pgjdbc's {@code TimestampUtils.parseDate}, which wants {@code YYYY-MM-DD}: the
+     * defect that made projection mode unusable, since a non-matching mandate_ref
+     * returns no rows and never reaches here, so the crash fired exactly when the gate
+     * had something to decide. Blank/NULL and malformed handling: {@link CcyymmddDate}.
+     *
+     * <p>Note: {@code VerdictChain.projectionMandateVerdict} reads only {@code state}
+     * today, so both dates are currently dead weight on this path. They are kept because
+     * {@link MandateProjection} is the shared record and the columns are part of the
+     * published {@code man_ctv_view} contract (mrg 007, "IDENTICAL column list").
+     */
     private static MandateProjection map(final ResultSet rs) throws SQLException {
-        Date start = rs.getDate("start_date");
-        Date expiry = rs.getDate("expiry_date");
-        return new MandateProjection(rs.getString("mandate_ref"), rs.getString("contract_ref"),
+        String ref = rs.getString("mandate_ref");
+        return new MandateProjection(ref, rs.getString("contract_ref"),
                 rs.getString("creditor_account"), rs.getString("state"),
-                start == null ? null : start.toLocalDate(),
-                expiry == null ? null : expiry.toLocalDate(),
+                CcyymmddDate.parse("start_date", ref, rs.getString("start_date")),
+                CcyymmddDate.parse("expiry_date", ref, rs.getString("expiry_date")),
                 rs.getBigDecimal("max_collection_amount"));
     }
 

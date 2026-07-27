@@ -68,12 +68,18 @@ class CtvProjectionGateIT {
 
         JdbcTemplate manJdbc = new JdbcTemplate(new DriverManagerDataSource(
                 manUrl(), CRDB.getUsername(), CRDB.getPassword()));
+        // start_date/expiry_date are VARCHAR(8) CCYYMMDD, matching the real contract:
+        // the spine declares both VARCHAR(8) (mrr 001-man-spine) and every dcre_man view
+        // down to man_ctv_view carries them through as strings (mrg 004/005/007). This
+        // fixture declared DATE until 2026-07-27, which let the whole job-level gate run
+        // green while rs.getDate() was crashing against the live projection. The blank
+        // expiry is MRR's "no expiry"; the NULL pair is the live cluster's own row shape.
         manJdbc.execute("""
                 CREATE TABLE IF NOT EXISTS mandate (
                     id UUID NOT NULL DEFAULT gen_random_uuid() PRIMARY KEY,
                     mandate_ref VARCHAR(35) NOT NULL, contract_ref VARCHAR(35) NOT NULL,
                     creditor_account VARCHAR(34) NOT NULL, state VARCHAR(16) NOT NULL,
-                    start_date DATE NULL, expiry_date DATE NULL,
+                    start_date VARCHAR(8) NULL, expiry_date VARCHAR(8) NULL,
                     max_collection_amount DECIMAL(18,2) NULL)""");
         manJdbc.execute("""
                 CREATE VIEW man_ctv_view AS
@@ -82,8 +88,8 @@ class CtvProjectionGateIT {
         manJdbc.update("""
                 INSERT INTO mandate (mandate_ref, contract_ref, creditor_account, state,
                     start_date, expiry_date, max_collection_amount)
-                VALUES ('MND-ACCP','CTR-1','63000000000001','ACCP',DATE '2026-01-01',DATE '2027-01-01',100000.00),
-                       ('MND-PDNG','CTR-1','63000000000001','PDNG',DATE '2026-01-01',DATE '2027-01-01',100000.00)""");
+                VALUES ('MND-ACCP','CTR-1','63000000000001','ACCP','20260726','',100000.00),
+                       ('MND-PDNG','CTR-1','63000000000001','PDNG','20260726',NULL,100000.00)""");
     }
 
     @Autowired
