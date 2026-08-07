@@ -23,16 +23,23 @@
 
         <dropTable tableName="mandate"/>
 
-        <rollback>
-            <createTable tableName="mandate">
-                <column name="id" type="UUID">
-                    <constraints primaryKey="true" nullable="false"/>
-                </column>
-                <column name="ref" type="VARCHAR(35)"/>
-                <column name="contract_ref" type="VARCHAR(35)"/>
-                <column name="state" type="VARCHAR(16)"/>
-            </createTable>
-        </rollback>
+        <!--
+          Deliberately EMPTY, and that is the honest option here (review I6).
+
+          A rollback that re-created the table could not restore anything useful:
+          the table was never in a changelog, so this changeset has no authored
+          shape to return to, and the real one carried 17 columns, five CHECK
+          constraints, a UNIQUE and two indexes. The 4-column stub this changeset
+          originally shipped would have produced an empty table of a shape that
+          never existed, which is worse than nothing: it would satisfy a
+          "table exists" check while holding no rows and the wrong columns, and it
+          would immediately trip the CtvManifestParityTest invariant that nothing
+          re-creates dcre_col.mandate.
+
+          Rolling this changeset back is therefore a restore-from-backup operation,
+          not a Liquibase one. The data lived only in an infra fixture seed.
+        -->
+        <rollback/>
     </changeSet>
 
 </databaseChangeLog>

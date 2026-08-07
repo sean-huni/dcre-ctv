@@ -55,6 +55,11 @@ class CtvEndoModeTest {
         registry.add("spring.datasource.url", CRDB::getJdbcUrl);
         registry.add("spring.datasource.username", CRDB::getUsername);
         registry.add("spring.datasource.password", CRDB::getPassword);
+        // SCRUM-107 (review C1b): deliberately a CLOSED port. ENDO has no mandate
+        // gate (R-20), so nothing here may open a dcre_man connection. If the ENDO
+        // path ever contacts the projection again, these suites go red here rather
+        // than taking collections-ENDO down whenever mandates is unreachable.
+        registry.add("dcre.ctv.mandates-db-url", () -> ManProjectionFixture.CLOSED_PORT_URL);
     }
 
     @Autowired
@@ -124,17 +129,7 @@ class CtvEndoModeTest {
                     balance DECIMAL(18,2) NULL,
                     max_credit_limit DECIMAL(18,2) NULL,
                     process_status VARCHAR(16) NOT NULL)""");
-        jdbc.execute("""
-                CREATE TABLE IF NOT EXISTS mandate (
-                    id UUID NOT NULL DEFAULT gen_random_uuid() PRIMARY KEY,
-                    mandate_ref VARCHAR(35) NOT NULL,
-                    contract_ref VARCHAR(14) NOT NULL,
-                    creditor_account VARCHAR(34) NOT NULL,
-                    status VARCHAR(16) NOT NULL,
-                    start_date DATE NOT NULL,
-                    expiry_date DATE NULL,
-                    max_collection_amount DECIMAL(18,2) NOT NULL)""");
-        // ENDO carries no bank-registered mandates: the mandate table stays empty.
+        // SCRUM-107: dcre_col.mandate was dropped. ENDO never had a mandate gate
         upsertAccount("62000000000001", "FNBRF", new BigDecimal("5000.00"), null);   // under cap
         upsertAccount("62000000000002", "FNBCC", null, null);                        // NULL cap
         upsertAccount("62000000000003", "FNBRF", new BigDecimal("100.00"), null);    // over cap target

@@ -45,6 +45,7 @@ class CtvSeamAndRollupIT {
 
     static {
         CRDB.start();
+        ManProjectionFixture.create(CRDB);
     }
 
     static Path freshExchangeRoot() {
@@ -60,6 +61,12 @@ class CtvSeamAndRollupIT {
         registry.add("spring.datasource.url", CRDB::getJdbcUrl);
         registry.add("spring.datasource.username", CRDB::getUsername);
         registry.add("spring.datasource.password", CRDB::getPassword);
+        // SCRUM-107 (review C1): declare the mandates store against THIS container.
+        // The committed default is localhost:26257; inheriting it makes the suite
+        // depend on whatever happens to be listening on the build machine.
+        registry.add("dcre.ctv.mandates-db-url", () -> ManProjectionFixture.url(CRDB));
+        registry.add("dcre.ctv.mandates-db-user", CRDB::getUsername);
+        registry.add("dcre.ctv.mandates-db-password", CRDB::getPassword);
         registry.add("dcre.exchange-root", EXCHANGE::toString);
     }
 

@@ -36,9 +36,19 @@ public class MandateGate {
         return source;
     }
 
-    /** The dcre_man HLC to pin the projection range read to. */
-    public String snapshot() {
-        return projection.snapshotTimestamp();
+    /**
+     * The dcre_man HLC to pin the projection range read to, or {@code ""} on the ENDO
+     * flow, which has no mandate gate at all (R-20).
+     *
+     * <p>The {@code dcFlow} guard is a FAILURE-DOMAIN boundary, not an optimisation.
+     * {@code VerdictChain.classify} returns PASS for an ENDO entry before it looks at
+     * the projection, so an unguarded snapshot would open a dcre_man connection, on
+     * every ENDO arrival, for a timestamp nothing then reads. That would make
+     * collections-ENDO unavailable whenever the mandates database is unreachable, and
+     * a context must not take an outage for a store it does not consult.
+     */
+    public String snapshot(final boolean dcFlow) {
+        return dcFlow ? projection.snapshotTimestamp() : "";
     }
 
     /**

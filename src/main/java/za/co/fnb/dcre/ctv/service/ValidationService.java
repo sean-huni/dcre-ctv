@@ -80,7 +80,7 @@ public class ValidationService {
         }
         String clientToken = header.getInitgPty() == null ? "" : header.getInitgPty().strip();
         return new HeaderCheck.Ok(header.getTxCount(), clientToken,
-                referenceSnapshot.snapshotTimestamp(), mandateGate.snapshot());
+                referenceSnapshot.snapshotTimestamp(), mandateGate.snapshot(dcFlow));
     }
 
     /**

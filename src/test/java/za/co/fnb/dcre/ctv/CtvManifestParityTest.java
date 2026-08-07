@@ -38,6 +38,7 @@ class CtvManifestParityTest {
 
     static {
         CRDB.start();
+        ManProjectionFixture.create(CRDB);
     }
 
     @DynamicPropertySource
@@ -45,6 +46,12 @@ class CtvManifestParityTest {
         registry.add("spring.datasource.url", CRDB::getJdbcUrl);
         registry.add("spring.datasource.username", CRDB::getUsername);
         registry.add("spring.datasource.password", CRDB::getPassword);
+        // SCRUM-107 (review C1): declare the mandates store against THIS container.
+        // The committed default is localhost:26257; inheriting it makes the suite
+        // depend on whatever happens to be listening on the build machine.
+        registry.add("dcre.ctv.mandates-db-url", () -> ManProjectionFixture.url(CRDB));
+        registry.add("dcre.ctv.mandates-db-user", CRDB::getUsername);
+        registry.add("dcre.ctv.mandates-db-password", CRDB::getPassword);
     }
 
     @Autowired
@@ -69,6 +76,7 @@ class CtvManifestParityTest {
         assertEquals("BUSINESS_PARTIAL", run.getExecutionContext().getString("ctvVerdict"),
                 "the DC sample carries injected faults");
 
+        assertNoEntryTargetsAMandate(arrival);
         Map<Integer, String> expected = manifestExpectations();
         Map<Integer, String> actual = new HashMap<>();
         jdbc.query("SELECT sequence, outcome FROM validation_log WHERE arrival_id=?",
@@ -164,7 +172,24 @@ class CtvManifestParityTest {
      * chain could produce. SCRUM-107 replaced that chain with a single state check
      * against dcre_man.man_ctv_view keyed on the entry's mandate_ref.
      */
-    private static final List<String> LEGACY_MANDATE_TIER_OUTCOMES = List.of(
+    /**
+     * The precondition that licenses translating the mandate tier at all (review I5).
+     * A V2 book carries no mandate_ref, so the projection gate is a no-op for every
+     * row. If this fixture is ever re-cut with real mandate_refs, the translation
+     * below stops being valid and this fails rather than quietly turning a genuine
+     * FAIL_MANDATE_NOT_ACTIVE into PASS.
+     */
+    void assertNoEntryTargetsAMandate(UUID arrival) {
+        Integer targeting = jdbc.queryForObject(
+                "SELECT count(*) FROM tx_entry WHERE arrival_id=? AND mandate_ref IS NOT NULL",
+                Integer.class, arrival);
+        assertEquals(0, targeting,
+                "this suite translates mandate-tier expectations to PASS, which is only"
+                        + " correct while no entry targets a mandate; re-cut as V3 and the"
+                        + " manifest needs real projection expectations instead");
+    }
+
+    private static final List<String> MANDATE_TIER_OUTCOMES = List.of(
             "FAIL_MANDATE_NOT_FOUND", "FAIL_CONTRACT_MISMATCH", "FAIL_MANDATE_NOT_ACTIVE",
             "FAIL_MANDATE_NOT_EFFECTIVE", "FAIL_MANDATE_EXPIRED", "FAIL_EXCEEDS_MANDATE_CAP");
 
@@ -177,6 +202,17 @@ class CtvManifestParityTest {
      * mandate_ref because such a collection does not target a mandate. So every row
      * whose only fault was a mandate-tier fault now reaches PASS, while every
      * account-tier and duplicate-tier expectation is asserted unchanged.
+     *
+     * <p>Review I5 asked that {@code FAIL_MANDATE_NOT_ACTIVE} never be translated,
+     * because unlike the other five it IS still reachable under the projection gate.
+     * The concern is right and the guard for it is structural rather than a name
+     * exclusion: what licenses translating ANY mandate-tier row here is that no entry
+     * in this fixture targets a mandate. {@link #assertNoEntryTargetsAMandate} asserts
+     * that precondition against the seeded spine, so if the fixture is ever re-cut as
+     * V3 with real mandate_refs, this test fails loudly instead of silently rewriting
+     * a genuine projection FAIL to PASS. Excluding the name alone would not have
+     * caught that case; it would only have made this fixture's two legacy-origin
+     * rows fail.
      */
     Map<Integer, String> manifestExpectations() throws Exception {
         Map<Integer, String> expected = new HashMap<>();
@@ -188,7 +224,7 @@ class CtvManifestParityTest {
         for (int i = 1; i < rows.size(); i++) {
             String[] parts = rows.get(i).split(",");
             String outcome = parts[outIdx];
-            if (LEGACY_MANDATE_TIER_OUTCOMES.contains(outcome)) {
+            if (MANDATE_TIER_OUTCOMES.contains(outcome)) {
                 outcome = "PASS";
                 translated++;
             }
@@ -198,7 +234,7 @@ class CtvManifestParityTest {
         // mandate-tier faults this silently stops testing anything, so require the
         // rows it is built to translate to actually be present.
         assertEquals(9, translated,
-                "the V2 oracle should still carry 9 legacy mandate-tier expectations to translate");
+                "the V2 oracle should still carry 9 mandate-tier expectations to translate");
         return expected;
     }
 }

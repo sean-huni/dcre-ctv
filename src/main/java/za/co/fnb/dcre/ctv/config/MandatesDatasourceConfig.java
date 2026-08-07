@@ -23,9 +23,18 @@ import javax.sql.DataSource;
  * and REPLACE the primary dcre_col datasource. It is a deliberately non-pooling
  * {@link SimpleDriverDataSource}: the projection is read once per job (one as-of
  * snapshot + one read per partition range), so a pool would idle unclosed for the
- * life of the context. The connection is opened lazily, so in {@code legacy} mode
- * (the default) dcre_man is never contacted - the bean exists but {@code MandateGate}
- * short-circuits to the collections store.
+ * life of the context.
+ *
+ * <p><b>SCRUM-107: this bean is now on the DC critical path.</b> The comment here used
+ * to say the connection was opened lazily so dcre_man was never contacted in the default
+ * {@code legacy} mode. Both halves of that are dead: there is no legacy mode, and the DC
+ * flow contacts dcre_man on every arrival. Because this config is {@code @Import}-ed on
+ * {@code CtvApplication} it is present in EVERY {@code @SpringBootTest} context, so any
+ * test that runs the job must declare {@code dcre.ctv.mandates-db-url} against its own
+ * container; otherwise it silently resolves the {@code localhost:26257} default and
+ * passes or fails on whatever is listening on the build machine. See
+ * {@code ManProjectionFixture}. The ENDO flow still never contacts it: {@code MandateGate}
+ * short-circuits the snapshot (R-20).
  *
  * <p><b>Dedicated read-only dcre_man credentials.</b> The connection uses
  * {@code dcre.ctv.mandates-db-user} / {@code dcre.ctv.mandates-db-password} (default

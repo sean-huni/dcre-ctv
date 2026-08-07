@@ -75,10 +75,22 @@ public final class CtvTestTables {
 
     public static void insertEntry(JdbcTemplate jdbc, UUID arrival, int sequence, String e2e,
                                    String account, String contract, String amount, String contentHash) {
+        insertEntry(jdbc, arrival, sequence, e2e, account, contract, amount, contentHash, null);
+    }
+
+    /**
+     * SCRUM-107 (review I3): {@code mandateRef} overload. Without it every entry this
+     * harness writes carries a NULL mandate_ref, which makes the projection gate a
+     * documented no-op, so no suite built on it can exercise the mandate tier at all.
+     */
+    public static void insertEntry(JdbcTemplate jdbc, UUID arrival, int sequence, String e2e,
+                                   String account, String contract, String amount,
+                                   String contentHash, String mandateRef) {
         jdbc.update("""
                 INSERT INTO tx_entry (arrival_id, sequence, e2e, creditor_account, contract_ref,
-                                      amount, content_hash)
-                VALUES (?,?,?,?,?,?,?)""",
-                arrival, sequence, e2e, account, contract, new BigDecimal(amount), contentHash);
+                                      mandate_ref, amount, content_hash)
+                VALUES (?,?,?,?,?,?,?,?)""",
+                arrival, sequence, e2e, account, contract, mandateRef,
+                new BigDecimal(amount), contentHash);
     }
 }
