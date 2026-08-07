@@ -94,7 +94,8 @@ class CtvEndoModeTest {
                 2, "PASS",                    // second unknown account, same pass-through
                 3, "PASS",                    // known, under cap
                 4, "PASS",                    // known, NULL cap: cap check post-init
-                5, "FAIL_EXCEEDS_RF_BALANCE"  // existing over-cap keeps its DC outcome
+                5, "FAIL_EXCEEDS_RF_BALANCE", // existing over-cap keeps its DC outcome
+                6, "PASS"                     // targets a mandate, but ENDO has no gate (R-20)
         );
         Map<Integer, String> actual = new HashMap<>();
         jdbc.query("SELECT sequence, outcome FROM validation_log WHERE arrival_id=?",
@@ -160,12 +161,22 @@ class CtvEndoModeTest {
                     content_hash CHAR(64),
                     UNIQUE (arrival_id, sequence))""");
         jdbc.update("UPSERT INTO tx_header (arrival_id, tx_count, initg_pty, business_date) VALUES (?,?,?,?)",
-                arrival, 5, "FNBEN01", "20260711");
+                arrival, 6, "FNBEN01", "20260711");
         insertEntry(arrival, 1, "ENDO-E2E-00001", "62999999999901", "150.00"); // unknown
         insertEntry(arrival, 2, "ENDO-E2E-00002", "62999999999902", "220.00"); // unknown
         insertEntry(arrival, 3, "ENDO-E2E-00003", "62000000000001", "100.00"); // under cap
         insertEntry(arrival, 4, "ENDO-E2E-00004", "62000000000002", "300.00"); // NULL cap
         insertEntry(arrival, 5, "ENDO-E2E-00005", "62000000000003", "250.00"); // over cap
+        // SCRUM-107 (review NEW-2): an ENDO row that DOES target a mandate. Every other
+        // ENDO fixture row carries a NULL mandate_ref, which made this whole suite
+        // structurally unable to see the defect: with a NULL ref the projection lookup
+        // short-circuits on the empty collection and never validates the as-of string.
+        // This row makes the set non-empty, so an unguarded projectionByRef would hand
+        // the deliberately empty ENDO snapshot to requireHlc and fail the entire job.
+        // Combined with the closed-port mandates URL on this context, it is a live
+        // assertion that ENDO neither reads nor needs the projection.
+        insertMandateTargetingEntry(arrival, 6, "ENDO-E2E-00006", "62000000000001", "100.00",
+                "MND-ENDO-SHOULD-NEVER-BE-LOOKED-UP");
     }
 
     void insertEntry(UUID arrival, int sequence, String e2e, String account, String amount) {
@@ -173,5 +184,14 @@ class CtvEndoModeTest {
                 UPSERT INTO tx_entry (arrival_id, sequence, e2e, creditor_account, contract_ref, amount)
                 VALUES (?,?,?,?,NULL,?)""",
                 arrival, sequence, e2e, account, new BigDecimal(amount));
+    }
+
+    void insertMandateTargetingEntry(UUID arrival, int sequence, String e2e, String account,
+                                     String amount, String mandateRef) {
+        jdbc.update("""
+                UPSERT INTO tx_entry (arrival_id, sequence, e2e, creditor_account, contract_ref,
+                                      mandate_ref, amount)
+                VALUES (?,?,?,?,NULL,?,?)""",
+                arrival, sequence, e2e, account, mandateRef, new BigDecimal(amount));
     }
 }

@@ -168,11 +168,6 @@ class CtvManifestParityTest {
     }
 
     /**
-     * The toolkit oracle's mandate-tier verdicts, which only the retired dcre_col
-     * chain could produce. SCRUM-107 replaced that chain with a single state check
-     * against dcre_man.man_ctv_view keyed on the entry's mandate_ref.
-     */
-    /**
      * The precondition that licenses translating the mandate tier at all (review I5).
      * A V2 book carries no mandate_ref, so the projection gate is a no-op for every
      * row. If this fixture is ever re-cut with real mandate_refs, the translation

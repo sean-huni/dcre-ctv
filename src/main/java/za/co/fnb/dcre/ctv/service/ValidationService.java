@@ -112,8 +112,16 @@ public class ValidationService {
                 .filter(Objects::nonNull)
                 .collect(Collectors.toSet());
         Map<String, Account> accountsByNumber = referenceSnapshot.accountsByNumber(asOfTimestamp, accountNumbers);
-        Map<String, MandateProjection> projectionByRef =
-                mandateGate.projectionByRef(mandateAsOfTimestamp, mandateRefs);
+        // SCRUM-107 (review NEW-2): guarded on dcFlow, MIRRORING VerdictChain.classify,
+        // which returns PASS for ENDO before it consults the projection. Guarding only
+        // the snapshot left this call live on both flows, so ENDO was saved solely by
+        // MandateProjectionDao's empty-collection short-circuit: the moment an ENDO
+        // arrival carried a non-null mandate_ref, the deliberately empty as-of string
+        // reached requireHlc and failed the whole job. The guard belongs wherever the
+        // flow decides, and that is here as well as in the gate.
+        Map<String, MandateProjection> projectionByRef = dcFlow
+                ? mandateGate.projectionByRef(mandateAsOfTimestamp, mandateRefs)
+                : Map.of();
 
         List<ValidationLogEntity> batch = new ArrayList<>(rows.size());
         int fails = 0;

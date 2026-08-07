@@ -20,7 +20,19 @@ import org.testcontainers.containers.CockroachContainer;
  * suite throws.
  *
  * <p>The rule this restores: a test declares every backing service it touches, against a
- * container it owns. Nothing in this tree may resolve {@code localhost:26257}.
+ * container it owns. Every one of the 9 job-running contexts now does so.
+ *
+ * <p>NOT YET ENFORCED, and that gap is deliberate rather than overlooked (review C1c).
+ * The enforcement is one line on the Gradle test task:
+ * {@code systemProperty 'dcre.ctv.mandates-db-url', CLOSED_PORT_URL}. A system property
+ * outranks application.yml and is outranked by {@code @DynamicPropertySource}, so every
+ * suite that declares its own container still wins while a new one that forgets gets a
+ * closed port and dies instead of borrowing. It is not applied here because build.gradle
+ * is being edited concurrently by the platform-copybook extraction and this change may
+ * not carry that unrelated work into its commit. A JUnit LauncherSessionListener was
+ * tried as a build-file-free substitute and does not compile: junit-platform-launcher is
+ * not on the test COMPILE classpath, so it needs a build.gradle dependency too.
+ * MandatesDatasourceConfigTest is already insulated, so the line can be added on its own.
  *
  * <p>Call {@link #create(CockroachContainer)} from the same static block that starts the
  * container, so the database exists before any Spring context resolves the URL.

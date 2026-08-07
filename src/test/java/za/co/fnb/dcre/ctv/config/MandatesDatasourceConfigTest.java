@@ -32,12 +32,30 @@ class MandatesDatasourceConfigTest {
     private static final String WIRED_URL =
             "dcre.ctv.mandates-db-url=jdbc:postgresql://crdb.dcre.svc.cluster.local:26257/dcre_man?sslmode=disable";
 
+    /**
+     * SCRUM-107 (review C1c): the committed dev default, supplied EXPLICITLY.
+     *
+     * <p>These cases are about the behaviour OF that default, so they must not rely on it
+     * arriving by OMISSION. The planned C1c enforcement sets dcre.ctv.mandates-db-url to
+     * a closed port for the whole test JVM, so that a @SpringBootTest which forgets to
+     * declare its own store dies instead of borrowing whatever is listening; that
+     * property reaches ApplicationContextRunner's Environment too, at which point "no
+     * property" would silently stop meaning "the dev default" and these two cases would
+     * assert nothing. Driving it explicitly makes them immune either way.
+     *
+     * <p>theGuardedConstantIsTheCommittedYmlDefault keeps the pair honest by proving
+     * this constant IS the yml literal, so driving it explicitly asserts the same fact
+     * without depending on ambient JVM state.
+     */
+    private static final String DEV_DEFAULT_URL =
+            "dcre.ctv.mandates-db-url=" + MandatesDatasourceConfig.LOCAL_DEV_URL;
+
     private final ApplicationContextRunner runner =
             new ApplicationContextRunner().withUserConfiguration(MandatesDatasourceConfig.class);
 
     @Test
     void inClusterOnTheDevDefaultFailsAtStartupNamingTheVariable() {
-        runner.withPropertyValues(IN_CLUSTER).run(context -> assertThat(context)
+        runner.withPropertyValues(IN_CLUSTER, DEV_DEFAULT_URL).run(context -> assertThat(context)
                 .getFailure()
                 .hasMessageContaining("DCRE_CTV_MANDATES_DB_URL"));
     }
@@ -54,7 +72,7 @@ class MandatesDatasourceConfigTest {
     void localDevKeepsTheCommittedDefaultAndBoots() {
         // Clean-clone rule: no .env, no cluster, still boots. The guard must not
         // turn the local inner loop into a mandatory-env chore.
-        runner.run(context -> {
+        runner.withPropertyValues(DEV_DEFAULT_URL).run(context -> {
             assertThat(context).hasNotFailed();
             assertThat(context).hasSingleBean(MandateProjectionDao.class);
         });
