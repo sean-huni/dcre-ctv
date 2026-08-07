@@ -46,8 +46,13 @@ class CtvPartitionDeterminismIT {
         expected.put(4, "FAIL_DUPLICATE_TX");        // content clash with seq 1, fresh e2e
         expected.put(5, "FAIL_DUPLICATE_E2E");       // e2e clash with seq 1
         expected.put(6, "FAIL_EXCEEDS_RF_BALANCE");
-        expected.put(7, "FAIL_CONTRACT_MISMATCH");
-        expected.put(8, "FAIL_EXCEEDS_MANDATE_CAP");
+        // SCRUM-107: these two were the LEGACY contract-match and mandate-cap arms.
+        // The entries carry no mandate_ref, so the projection gate is a documented
+        // no-op and the account tier alone decides: seq 7 is within cap, seq 8's
+        // 2000.00 is inside the 5000.00 account cap. The row is still exercised end
+        // to end; only the tier that terminates it has gone.
+        expected.put(7, "PASS");
+        expected.put(8, "PASS");
         expected.put(9, "PASS");
         expected.put(10, "PASS");
         return expected;
@@ -60,9 +65,7 @@ class CtvPartitionDeterminismIT {
         String lowCapAccount = accountPrefix + "0000000002";
         String unknownAccount = accountPrefix + "9999999999";
         CtvTestTables.insertAccount(jdbc, mainAccount, "FNBRF", "5000.00", "ACTIVE");
-        CtvTestTables.insertMandate(jdbc, mainAccount, "CT-DET-1", "ACTIVE", "2026-01-01", "none", "1000.00");
         CtvTestTables.insertAccount(jdbc, lowCapAccount, "FNBRF", "100.00", "ACTIVE");
-        CtvTestTables.insertMandate(jdbc, lowCapAccount, "CT-DET-2", "ACTIVE", "2026-01-01", "none", "1000.00");
 
         UUID arrival = UUID.randomUUID();
         entry(jdbc, arrival, 1, "E2E-DET-1", mainAccount, "CT-DET-1", "100.00", "H-1");

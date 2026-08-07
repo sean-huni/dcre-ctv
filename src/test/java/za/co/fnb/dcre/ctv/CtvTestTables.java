@@ -30,16 +30,6 @@ public final class CtvTestTables {
                     max_credit_limit DECIMAL(18,2) NULL,
                     process_status VARCHAR(16) NOT NULL)""");
         jdbc.execute("""
-                CREATE TABLE IF NOT EXISTS mandate (
-                    id UUID NOT NULL DEFAULT gen_random_uuid() PRIMARY KEY,
-                    mandate_ref VARCHAR(35) NOT NULL,
-                    contract_ref VARCHAR(14) NOT NULL,
-                    creditor_account VARCHAR(34) NOT NULL,
-                    status VARCHAR(16) NOT NULL,
-                    start_date DATE NOT NULL,
-                    expiry_date DATE NULL,
-                    max_collection_amount DECIMAL(18,2) NOT NULL)""");
-        jdbc.execute("""
                 CREATE TABLE IF NOT EXISTS tx_header (
                     id UUID NOT NULL DEFAULT gen_random_uuid() PRIMARY KEY,
                     arrival_id UUID NOT NULL UNIQUE,
@@ -67,19 +57,6 @@ public final class CtvTestTables {
                 balanceCarrying ? capValue : null,
                 balanceCarrying ? null : capValue,
                 status);
-    }
-
-    public static void insertMandate(JdbcTemplate jdbc, String account, String contract,
-                                     String status, String start, String expiry, String maximum) {
-        jdbc.update("""
-                INSERT INTO mandate (mandate_ref, contract_ref, creditor_account, status,
-                                     start_date, expiry_date, max_collection_amount)
-                VALUES (?,?,?,?,?,?,?)""",
-                "MND-" + UUID.randomUUID().toString().substring(0, 8),
-                contract, account, status,
-                Date.valueOf(LocalDate.parse(start)),
-                "none".equals(expiry) || expiry == null ? null : Date.valueOf(LocalDate.parse(expiry)),
-                new BigDecimal(maximum));
     }
 
     public static void insertHeader(JdbcTemplate jdbc, UUID arrival, int txCount) {

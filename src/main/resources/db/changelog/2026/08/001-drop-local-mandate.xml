@@ -1,0 +1,38 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<databaseChangeLog
+        xmlns="http://www.liquibase.org/xml/ns/dbchangelog"
+        xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+        xsi:schemaLocation="http://www.liquibase.org/xml/ns/dbchangelog
+        http://www.liquibase.org/xml/ns/dbchangelog/dbchangelog-latest.xsd">
+
+    <!--
+      SCRUM-107 cleanout: dcre_col.mandate is a MANDATES concept that lived in the
+      COLLECTIONS database, seeded by an infra fixture and owned by no service, which
+      is why it appears in no changelog. CTV now reads dcre_man.man_ctv_view, the
+      contract the mandates family owns and maintains.
+
+      Dropped ONLY after the projection gate was proven on the cluster with BOTH
+      verdicts. CONTINUE, not MARK_RAN: on a database that never had the table this
+      must skip WITHOUT recording, or the skip becomes permanent (A-79).
+    -->
+    <changeSet id="001-drop-local-mandate" author="dcre">
+        <preConditions onFail="CONTINUE"
+                       onFailMessage="dcre_col.mandate already absent; nothing to drop.">
+            <tableExists tableName="mandate"/>
+        </preConditions>
+
+        <dropTable tableName="mandate"/>
+
+        <rollback>
+            <createTable tableName="mandate">
+                <column name="id" type="UUID">
+                    <constraints primaryKey="true" nullable="false"/>
+                </column>
+                <column name="ref" type="VARCHAR(35)"/>
+                <column name="contract_ref" type="VARCHAR(35)"/>
+                <column name="state" type="VARCHAR(16)"/>
+            </createTable>
+        </rollback>
+    </changeSet>
+
+</databaseChangeLog>

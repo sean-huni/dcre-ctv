@@ -1,20 +1,17 @@
 package za.co.fnb.dcre.ctv.service;
 
-import za.co.fnb.dcre.ctv.domain.MandateSource;
 import za.co.fnb.dcre.platform.model.CtvOutcome;
 import za.co.fnb.dcre.platform.model.ProductType;
 
 import java.math.BigDecimal;
 import java.time.LocalDate;
-import java.util.List;
 import java.util.Map;
 
 /**
  * The R-19 item-tier precedence chain, ported from the fixture toolkit's
  * verifier classify() (the dev-normative oracle under R-35):
- * account exists -> account active -> account cap ->
- * mandate exists -> contract match -> mandate status -> effective ->
- * expiry -> mandate cap. Mandate layer applies to the DC flow only.
+ * account exists -> account active -> account cap -> mandate state.
+ * Mandate layer applies to the DC flow only.
  * Duplicate rules (e2e and content hash) run BEFORE this chain as the
  * set-based SQL dup scan (DupScanService, R-41); rows verdicted there are
  * never re-classified here.
@@ -22,27 +19,30 @@ import java.util.Map;
  * account and NULL cap pass through (AIS create-if-absent downstream);
  * everything else, including over-cap on existing accounts, is unchanged.
  *
- * <p>M10 T15 (SCRUM-78, Sean directive: key on MANDATE_REF): the mandate layer
- * has two backings selected by {@link MandateSource}. {@code LEGACY} keeps the
- * full dcre_col status/effective/expiry/cap chain matched by contract_ref.
- * {@code PROJECTION} collapses the whole mandate layer to a single state check
- * against the MSR projection ({@code man_ctv_view}) looked up by the entry's
- * {@code mandateRef}: the accepted-mandate lifecycle (cancel, reject, suspend,
- * expire) is already folded into the projection state, so only {@code ACCP} may
- * be collected against and every other state or an absent projection row rejects
- * with {@code FAIL_MANDATE_NOT_ACTIVE}. An entry with a NULL mandate_ref (a
- * collection not targeting a mandate, e.g. an old-layout V1/V2 book) is a
- * mandate-gate no-op: the account/cap tier stands but the mandate tier passes.
- * Account and duplicate tiers are unchanged in either mode.
+ * <p>SCRUM-107: the mandate layer has exactly ONE backing, the mandates-owned
+ * projection {@code dcre_man.man_ctv_view}, looked up by the entry's
+ * {@code mandateRef}. The whole mandate layer is a single state check: the
+ * accepted-mandate lifecycle (cancel, reject, suspend, expire) is already folded
+ * into the projection state, so only {@code ACCP} may be collected against and
+ * every other state or an absent projection row rejects with
+ * {@code FAIL_MANDATE_NOT_ACTIVE}. An entry with a NULL mandate_ref (a collection
+ * not targeting a mandate, e.g. an old-layout V1/V2 book) is a mandate-gate
+ * no-op: the account/cap tier stands but the mandate tier passes.
+ *
+ * <p>The former {@code LEGACY} backing read {@code dcre_col.mandate}, a mandates
+ * table that lived in the collections database and that no service owned. It was
+ * dropped in {@code 2026/08/001-drop-local-mandate.xml} after the projection gate
+ * was proven on the cluster with BOTH verdicts, and its status/effective/expiry/cap
+ * chain went with it. That is why {@code FAIL_MANDATE_NOT_FOUND},
+ * {@code FAIL_CONTRACT_MISMATCH}, {@code FAIL_MANDATE_NOT_EFFECTIVE},
+ * {@code FAIL_MANDATE_EXPIRED} and {@code FAIL_EXCEEDS_MANDATE_CAP} are no longer
+ * reachable on the DC flow: the projection collapses all of them into the single
+ * state predicate above.
  */
 public final class VerdictChain {
 
     public record Account(String accountNumber, String productCode, BigDecimal balance,
                           BigDecimal maxCreditLimit, String processStatus) {
-    }
-
-    public record Mandate(String contractRef, String status, LocalDate startDate,
-                          LocalDate expiryDate, BigDecimal maxCollectionAmount) {
     }
 
     /** A row of the MSR-owned {@code man_ctv_view}, keyed for lookup by {@code mandateRef}. */
@@ -59,9 +59,8 @@ public final class VerdictChain {
     }
 
     public static CtvOutcome classify(Entry entry, Map<String, Account> accounts,
-                                      Map<String, List<Mandate>> mandatesByAccount,
                                       Map<String, MandateProjection> projectionByRef,
-                                      LocalDate today, boolean dcFlow, MandateSource mandateSource) {
+                                      boolean dcFlow) {
         CtvOutcome accountOutcome = accountTier(entry, accounts, dcFlow);
         if (accountOutcome != null) {
             return accountOutcome;
@@ -69,9 +68,7 @@ public final class VerdictChain {
         if (!dcFlow) {
             return CtvOutcome.PASS; // ENDO has no mandate gate (R-20)
         }
-        return mandateSource == MandateSource.PROJECTION
-                ? projectionMandateVerdict(entry, projectionByRef)
-                : legacyMandateVerdict(entry, mandatesByAccount, today);
+        return projectionMandateVerdict(entry, projectionByRef);
     }
 
     /**
@@ -122,32 +119,4 @@ public final class VerdictChain {
                 : CtvOutcome.FAIL_MANDATE_NOT_ACTIVE;
     }
 
-    /** The legacy dcre_col status/effective/expiry/cap chain, matched by contract_ref (unchanged). */
-    private static CtvOutcome legacyMandateVerdict(Entry entry,
-                                                   Map<String, List<Mandate>> mandatesByAccount,
-                                                   LocalDate today) {
-        List<Mandate> held = mandatesByAccount.get(entry.creditorAccount());
-        Mandate mandate = held == null ? null : held.stream()
-                .filter(m -> m.contractRef().equals(entry.contractRef()))
-                .findFirst().orElse(null);
-        if (held == null || held.isEmpty()) {
-            return CtvOutcome.FAIL_MANDATE_NOT_FOUND;
-        }
-        if (mandate == null) {
-            return CtvOutcome.FAIL_CONTRACT_MISMATCH; // distinct from NOT_FOUND (R-23)
-        }
-        if (!"ACTIVE".equals(mandate.status())) {
-            return CtvOutcome.FAIL_MANDATE_NOT_ACTIVE;
-        }
-        if (mandate.startDate().isAfter(today)) {
-            return CtvOutcome.FAIL_MANDATE_NOT_EFFECTIVE;
-        }
-        if (mandate.expiryDate() != null && mandate.expiryDate().isBefore(today)) {
-            return CtvOutcome.FAIL_MANDATE_EXPIRED;
-        }
-        if (entry.amount().compareTo(mandate.maxCollectionAmount()) > 0) {
-            return CtvOutcome.FAIL_EXCEEDS_MANDATE_CAP;
-        }
-        return CtvOutcome.PASS;
-    }
 }

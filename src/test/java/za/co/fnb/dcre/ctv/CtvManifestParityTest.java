@@ -83,7 +83,10 @@ class CtvManifestParityTest {
     }
 
     void seedReferenceData() throws Exception {
-        for (String file : List.of("dcre_accounts_sample.sql", "dcre_mandates_sample.sql")) {
+        // SCRUM-107: dcre_mandates_sample.sql is gone with dcre_col.mandate. The
+        // fixture must NOT re-create a table production dropped, or it would hide
+        // the drop from every assertion below.
+        for (String file : List.of("dcre_accounts_sample.sql")) {
             String sql = Files.readString(Path.of("src/test/resources", file));
             for (String statement : sql.split(";\\s*\\n")) {
                 String s = statement.lines()
@@ -95,7 +98,9 @@ class CtvManifestParityTest {
             }
         }
         assertEquals(true, jdbc.queryForObject("SELECT count(*)>0 FROM account", Boolean.class));
-        assertEquals(true, jdbc.queryForObject("SELECT count(*)>0 FROM mandate", Boolean.class));
+        assertEquals(0, jdbc.queryForObject("SELECT count(*) FROM information_schema.tables"
+                + " WHERE table_name='mandate'", Integer.class),
+                "dcre_col.mandate was dropped in SCRUM-107; nothing may re-create it");
     }
 
     void seedSpine(UUID arrival) throws Exception {
@@ -154,16 +159,46 @@ class CtvManifestParityTest {
         }
     }
 
+    /**
+     * The toolkit oracle's mandate-tier verdicts, which only the retired dcre_col
+     * chain could produce. SCRUM-107 replaced that chain with a single state check
+     * against dcre_man.man_ctv_view keyed on the entry's mandate_ref.
+     */
+    private static final List<String> LEGACY_MANDATE_TIER_OUTCOMES = List.of(
+            "FAIL_MANDATE_NOT_FOUND", "FAIL_CONTRACT_MISMATCH", "FAIL_MANDATE_NOT_ACTIVE",
+            "FAIL_MANDATE_NOT_EFFECTIVE", "FAIL_MANDATE_EXPIRED", "FAIL_EXCEEDS_MANDATE_CAP");
+
+    /**
+     * The toolkit manifest stays the oracle for the account and duplicate tiers,
+     * which SCRUM-107 did not touch. Its MANDATE-tier expectations are translated,
+     * and the translation is DERIVED from the code contract rather than read off a
+     * run: this is a V2 book, V2 details carry no mandate_ref, and
+     * {@code VerdictChain.projectionMandateVerdict} returns PASS for a null/blank
+     * mandate_ref because such a collection does not target a mandate. So every row
+     * whose only fault was a mandate-tier fault now reaches PASS, while every
+     * account-tier and duplicate-tier expectation is asserted unchanged.
+     */
     Map<Integer, String> manifestExpectations() throws Exception {
         Map<Integer, String> expected = new HashMap<>();
         List<String> rows = Files.readAllLines(Path.of("src/test/resources/dcre_copybook_v2_dc_sample.manifest.csv"));
         String[] cols = rows.get(0).split(",");
         int seqIdx = List.of(cols).indexOf("detail_seq");
         int outIdx = List.of(cols).indexOf("expected_ctv_outcome");
+        int translated = 0;
         for (int i = 1; i < rows.size(); i++) {
             String[] parts = rows.get(i).split(",");
-            expected.put(Integer.parseInt(parts[seqIdx]), parts[outIdx]);
+            String outcome = parts[outIdx];
+            if (LEGACY_MANDATE_TIER_OUTCOMES.contains(outcome)) {
+                outcome = "PASS";
+                translated++;
+            }
+            expected.put(Integer.parseInt(parts[seqIdx]), outcome);
         }
+        // Guard the translation itself: if the fixture is ever re-cut without
+        // mandate-tier faults this silently stops testing anything, so require the
+        // rows it is built to translate to actually be present.
+        assertEquals(9, translated,
+                "the V2 oracle should still carry 9 legacy mandate-tier expectations to translate");
         return expected;
     }
 }

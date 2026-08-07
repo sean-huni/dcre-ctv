@@ -7,7 +7,6 @@ Feature: CTV arrival-level job verdicts and replay safety
 
   Scenario: An arrival where every collection passes is fully accepted
     Given a collections account "63030000000001" with product "FNBRF", cap "5000.00" and status "ACTIVE"
-    And account "63030000000001" holds an ACTIVE mandate for contract "CT-JOB-01" with maximum "1000.00"
     When CTV validates these collections as one arrival:
       | account        | contract  | amount | e2e |
       | 63030000000001 | CT-JOB-01 | 100.00 |     |
@@ -18,7 +17,6 @@ Feature: CTV arrival-level job verdicts and replay safety
 
   Scenario: An arrival mixing passing and failing collections is partially accepted
     Given a collections account "63030000000002" with product "FNBRF", cap "5000.00" and status "ACTIVE"
-    And account "63030000000002" holds an ACTIVE mandate for contract "CT-JOB-02" with maximum "1000.00"
     When CTV validates these collections as one arrival:
       | account        | contract  | amount | e2e |
       | 63030000000002 | CT-JOB-02 | 100.00 |     |
@@ -29,7 +27,6 @@ Feature: CTV arrival-level job verdicts and replay safety
 
   Scenario: Re-validating the same arrival leaves the validation log unchanged
     Given a collections account "63030000000003" with product "FNBRF", cap "5000.00" and status "ACTIVE"
-    And account "63030000000003" holds an ACTIVE mandate for contract "CT-JOB-03" with maximum "1000.00"
     When CTV validates these collections as one arrival:
       | account        | contract  | amount | e2e |
       | 63030000000003 | CT-JOB-03 | 100.00 |     |

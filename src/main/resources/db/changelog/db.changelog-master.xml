@@ -8,5 +8,6 @@
     <include file="db/changelog/2026/07/001-ctv.xml"/>
     <include file="db/changelog/2026/07/002-batch-metadata.xml"/>
     <include file="db/changelog/2026/07/003-layering.xml"/>
+    <include file="db/changelog/2026/08/001-drop-local-mandate.xml"/>
 
 </databaseChangeLog>

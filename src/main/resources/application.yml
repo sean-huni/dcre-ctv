@@ -25,11 +25,12 @@ dcre:
   agtops-db-password: ${DCRE_AGTOPS_DB_PASSWORD:}
   ctv:
     max-partitions: ${DCRE_CTV_MAX_PARTITIONS:5}
-    # M10 T15 (SCRUM-78): DC-flow mandate gate source. legacy = dcre_col mandate
-    # table (current, default, kept until M11 retirement); projection = MSR-owned
-    # dcre_man man_ctv_view (state must be exactly ACCP). The T16 gate env flips
-    # this to projection once the toolkit has seeded dcre_man.
-    mandate-source: ${DCRE_CTV_MANDATE_SOURCE:legacy}
+    # SCRUM-107: DC-flow mandate gate source. The projection is the AUTHORITY and
+    # the default: dcre_man man_ctv_view, the contract the mandates family owns and
+    # maintains (state must be exactly ACCP). The former `legacy` value read
+    # dcre_col.mandate, a mandates table that lived in the collections database and
+    # that no service owned; it was dropped in 2026/08/001-drop-local-mandate.xml.
+    mandate-source: ${DCRE_CTV_MANDATE_SOURCE:projection}
     # Second, READ-ONLY connection to the dcre_man projection (R-10). Opened
     # lazily and only in projection mode; dev clean-clone defaults (12FactorApp).
     # NOT the primary spring.datasource.* creds, so the standing-cluster ctv role

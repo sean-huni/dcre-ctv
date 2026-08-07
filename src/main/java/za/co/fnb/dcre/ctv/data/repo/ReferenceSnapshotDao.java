@@ -3,7 +3,6 @@ package za.co.fnb.dcre.ctv.data.repo;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Component;
 import za.co.fnb.dcre.ctv.service.VerdictChain.Account;
-import za.co.fnb.dcre.ctv.service.VerdictChain.Mandate;
 
 import javax.sql.DataSource;
 import java.sql.Connection;
@@ -66,28 +65,6 @@ public class ReferenceSnapshotDao {
             byNumber.put(account.accountNumber(), account);
         });
         return byNumber;
-    }
-
-    public Map<String, List<Mandate>> mandatesByAccount(String asOf, Collection<String> accountNumbers) {
-        Map<String, List<Mandate>> byAccount = new HashMap<>();
-        if (accountNumbers.isEmpty()) {
-            return byAccount;
-        }
-        // ORDER BY mandate_ref preserves the oracle's deterministic insertion order (R-35).
-        String sql = "SELECT creditor_account, contract_ref, status, start_date, expiry_date, "
-                + "max_collection_amount "
-                + "FROM mandate AS OF SYSTEM TIME '" + requireHlc(asOf) + "' "
-                + "WHERE creditor_account IN (" + placeholders(accountNumbers.size()) + ") "
-                + "ORDER BY mandate_ref";
-        query(sql, accountNumbers, rs -> {
-            java.sql.Date expiry = rs.getDate("expiry_date");
-            Mandate mandate = new Mandate(rs.getString("contract_ref"), rs.getString("status"),
-                    rs.getDate("start_date").toLocalDate(),
-                    expiry == null ? null : expiry.toLocalDate(),
-                    rs.getBigDecimal("max_collection_amount"));
-            byAccount.computeIfAbsent(rs.getString("creditor_account"), k -> new ArrayList<>()).add(mandate);
-        });
-        return byAccount;
     }
 
     private interface RowConsumer {

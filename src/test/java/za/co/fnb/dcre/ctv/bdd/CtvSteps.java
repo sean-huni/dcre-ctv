@@ -48,20 +48,6 @@ public class CtvSteps {
         CtvTestTables.insertAccount(jdbc, number, product, cap, status);
     }
 
-    @Given("account {string} holds an ACTIVE mandate for contract {string} with maximum {string}")
-    public void activeMandate(String account, String contract, String maximum) {
-        CtvTestTables.insertMandate(jdbc, account, contract, "ACTIVE", "2026-01-01", "none", maximum);
-    }
-
-    @Given("account {string} holds these mandates:")
-    public void mandates(String account, DataTable table) {
-        for (Map<String, String> row : table.asMaps()) {
-            CtvTestTables.insertMandate(jdbc, account,
-                    row.get("contract"), row.get("status"),
-                    row.get("start"), row.get("expiry"), row.get("maximum"));
-        }
-    }
-
     @When("CTV validates a collection of {string} against account {string} under contract {string}")
     public void validateSingle(String amount, String account, String contract) throws Exception {
         addEntry(account, contract, amount, null);
