@@ -14,6 +14,9 @@ dependencies {
     implementation 'org.springframework.boot:spring-boot-starter-batch'
     implementation 'org.springframework.boot:spring-boot-starter-jdbc'
     implementation 'org.springframework.boot:spring-boot-starter-data-jdbc'
+    // The copybook layout tables and the fixed-width reader: a shared DEPENDENCY,
+    // imported per service. crr, prr and mrr stay separate deployables.
+    implementation 'za.co.fnb.dcre:platform-copybook:0.1.0'
     implementation 'za.co.fnb.dcre:platform-persistence:0.1.0'
     implementation 'org.liquibase:liquibase-core'
     implementation 'org.springframework.boot:spring-boot-liquibase'
@@ -28,4 +31,23 @@ dependencies {
     testImplementation 'io.cucumber:cucumber-junit-platform-engine'
     testImplementation 'org.junit.platform:junit-platform-suite'
 }
-test { useJUnitPlatform() }
+test {
+    useJUnitPlatform()
+    // SCRUM-107 (task 2 review C1c), held pending this branch because it needs
+    // build.gradle: a scoped FAIL-CLOSED default for the dcre_man store.
+    //
+    // MandatesDatasourceConfig is @Import-ed on CtvApplication, so the mandates
+    // datasource exists in EVERY @SpringBootTest context, and its committed default
+    // is localhost:26257. A context that forgets to declare it therefore borrows
+    // whatever is listening on the build machine, and CockroachDB answers
+    // cluster_logical_timestamp() even for a database that does not exist, so the
+    // borrowed server never complains. That is how this suite once came to be green
+    // against a container belonging to an unrelated project.
+    //
+    // A javadoc saying "nothing may resolve localhost:26257" is not a guarantee;
+    // this is. System properties outrank application.yml but are outranked by
+    // @DynamicPropertySource, so every suite that DECLARES its own container still
+    // wins, and any new one that forgets gets a closed port and dies instead of
+    // silently borrowing. The DC suites passing IS the proof of that precedence.
+    systemProperty 'dcre.ctv.mandates-db-url', 'jdbc:postgresql://127.0.0.1:1/dcre_man?sslmode=disable'
+}

@@ -13,7 +13,7 @@ import org.springframework.test.context.DynamicPropertyRegistry;
 import org.springframework.test.context.DynamicPropertySource;
 import org.testcontainers.containers.CockroachContainer;
 import org.testcontainers.utility.DockerImageName;
-import za.co.fnb.dcre.platform.files.Layouts;
+import za.co.fnb.dcre.platform.copybook.Layouts;
 import za.co.fnb.dcre.platform.model.MoneyText;
 
 import java.nio.file.Files;
