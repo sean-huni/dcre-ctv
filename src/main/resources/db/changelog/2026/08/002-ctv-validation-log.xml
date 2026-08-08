@@ -1,0 +1,102 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<databaseChangeLog
+        xmlns="http://www.liquibase.org/xml/ns/dbchangelog"
+        xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+        xsi:schemaLocation="http://www.liquibase.org/xml/ns/dbchangelog
+        http://www.liquibase.org/xml/ns/dbchangelog/dbchangelog-latest.xsd">
+
+    <!-- ============================================================================
+         CTV v1 BASELINE, part 2 of 2: the CTV domain schema.
+
+         THIS IS THE VERSION 1 BASELINE. Every DCRE database is dropped and recreated
+         at the v1 cutover, so this changelog only ever runs against an EMPTY schema.
+         That is why the usual re-run guards are absent, and their absence is
+         deliberate rather than an oversight:
+
+           - no ANY-checksum override. It existed because an external SQL file was
+             edited after it had executed on live databases (A-81). With no recorded
+             history there is no checksum to contradict, and suppressing checksum
+             validation on a baseline would only disarm the control for every FUTURE
+             edit.
+           - the three layering columns are declared here rather than added by a
+             later ALTER. version / created_at / updated_at arrived in
+             2026/07/003-layering.xml as an additive retrofit onto a table that was
+             already live. On an empty database the net result is one table with
+             eight columns, so that is what this expresses. Carrying the create and
+             the ALTER separately would reproduce the retrofit rather than the
+             schema.
+           - dcre_col.mandate is simply never created. 2026/08/001-drop-local-mandate
+             dropped a mandates table that lived in the collections database and that
+             no changelog created; in v1 it has no create to undo, so it has no drop
+             either. A drop changeset in a baseline is scar tissue: it describes a
+             database that no longer exists. CtvManifestParityTest asserts
+             information_schema carries no relation named mandate, so the absence is
+             tested rather than assumed. The DC-flow mandate gate reads
+             dcre_man.man_ctv_view, the contract the mandates family owns.
+
+         ONE guard IS retained, and it is the exception that the rule above is about:
+         see the changeset comment. Pure typed tags throughout, no raw-SQL body.
+
+         validation_log is CTV's table: CTV is its only writer (R-04), one row per
+         validated detail record, keyed on the arrival and the record sequence.
+         ============================================================================ -->
+
+    <changeSet id="ctv-v1-validation-log" author="dcre">
+        <!--
+          KEPT DELIBERATELY, unlike every other re-run guard in this baseline.
+
+          validation_log CAN already exist on an empty v1 database, so this guard is
+          live rather than dead. dcre_col is shared, and CRG mints validation_log as
+          a bootstrap read-source when its report window fires before CTV's first
+          arrival (crg 001-crg.xml, changeset 001-bootstrap-sources-crg). Which of
+          the two reaches Liquibase first is a race decided by pod start order, not
+          by anything this changelog controls, so an unguarded createTable here would
+          crashloop CTV on exactly the orderings where CRG wins.
+
+          MARK_RAN rather than CONTINUE is correct for THIS dependency, and the
+          distinction is the A-79 lesson. CONTINUE is for a dependency that has not
+          bootstrapped YET and will exist later, where recording the skip makes it
+          permanent. Here the guarded object is the thing this changeset creates: if
+          it already exists, the work is genuinely done and will never need doing
+          again, so recording it as applied is the truth.
+
+          CRG's DDL is column-for-column identical to the createTable below,
+          including the uq_validation_arrival_sequence constraint, so either winner
+          leaves the same table.
+        -->
+        <preConditions onFail="MARK_RAN">
+            <not><tableExists tableName="validation_log"/></not>
+        </preConditions>
+
+        <createTable tableName="validation_log">
+            <column name="id" type="UUID" defaultValueComputed="gen_random_uuid()">
+                <constraints primaryKey="true" nullable="false"/>
+            </column>
+            <column name="arrival_id" type="UUID">
+                <constraints nullable="false"/>
+            </column>
+            <column name="sequence" type="INT">
+                <constraints nullable="false"/>
+            </column>
+            <column name="outcome" type="VARCHAR(32)">
+                <constraints nullable="false"/>
+            </column>
+            <column name="detail" type="VARCHAR(256)"/>
+            <column name="version" type="BIGINT" defaultValueNumeric="0">
+                <constraints nullable="false"/>
+            </column>
+            <column name="created_at" type="TIMESTAMPTZ" defaultValueComputed="now()">
+                <constraints nullable="false"/>
+            </column>
+            <column name="updated_at" type="TIMESTAMPTZ" defaultValueComputed="now()">
+                <constraints nullable="false"/>
+            </column>
+        </createTable>
+        <addUniqueConstraint tableName="validation_log" columnNames="arrival_id, sequence"
+                             constraintName="uq_validation_arrival_sequence"/>
+        <rollback>
+            <dropTable tableName="validation_log"/>
+        </rollback>
+    </changeSet>
+
+</databaseChangeLog>
