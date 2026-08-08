@@ -1,0 +1,82 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<databaseChangeLog
+        xmlns="http://www.liquibase.org/xml/ns/dbchangelog"
+        xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+        xsi:schemaLocation="http://www.liquibase.org/xml/ns/dbchangelog
+        http://www.liquibase.org/xml/ns/dbchangelog/dbchangelog-latest.xsd">
+
+    <!-- ============================================================================
+         CTV v1 BASELINE, part 4: account_reference_load, the record of WHICH artifact
+         version this database currently holds.
+
+         One row per successful load, written in the SAME transaction as the data it
+         describes. That is the whole point: a load record committed separately from
+         the rows would be a second place holding one fact, and one of the two would
+         be stale with nothing to say which. Because they share a transaction, the
+         newest row here is a statement about the CURRENT contents of dcre_col.account
+         and not about an intention.
+
+         row_count is the manifest's count for the WHOLE artifact (110), while
+         applied_row_count is what THIS context materialised (the 10 COLLECTIONS-shape
+         rows). Both are kept because their difference is the projection, and an
+         operator who sees them equal on a collections database is looking at a loader
+         that stopped projecting.
+
+         checksum is the sha256 the loader VERIFIED, never one it merely copied: the
+         load fails before reaching this table if the digest does not match the bytes.
+
+         No column repeats its host table's name: dataset_version, not
+         account_reference_load_dataset_version.
+
+         VERSION 1 BASELINE, same absent guards and same reasons as parts 1 to 3.
+         ============================================================================ -->
+
+    <changeSet id="ctv-v1-account-reference-load" author="dcre">
+        <createTable tableName="account_reference_load">
+            <column name="id" type="UUID" defaultValueComputed="gen_random_uuid()">
+                <constraints primaryKey="true" nullable="false"/>
+            </column>
+            <column name="dataset_version" type="VARCHAR(64)">
+                <constraints nullable="false"/>
+            </column>
+            <column name="schema_version" type="INT">
+                <constraints nullable="false"/>
+            </column>
+            <column name="source_id" type="VARCHAR(256)">
+                <constraints nullable="false"/>
+            </column>
+            <column name="effective_ts" type="TIMESTAMPTZ">
+                <constraints nullable="false"/>
+            </column>
+            <column name="publication_ts" type="TIMESTAMPTZ">
+                <constraints nullable="false"/>
+            </column>
+            <column name="row_count" type="INT">
+                <constraints nullable="false"/>
+            </column>
+            <column name="checksum" type="VARCHAR(64)">
+                <constraints nullable="false"/>
+            </column>
+            <column name="applied_row_count" type="INT">
+                <constraints nullable="false"/>
+            </column>
+            <!-- Nullable on purpose: the load service is callable outside a Batch
+                 execution (its own tests do exactly that), and a fabricated execution
+                 id would be worse than an honest absent one. -->
+            <column name="job_execution_id" type="BIGINT"/>
+            <column name="version" type="BIGINT" defaultValueNumeric="0">
+                <constraints nullable="false"/>
+            </column>
+            <column name="created_at" type="TIMESTAMPTZ" defaultValueComputed="now()">
+                <constraints nullable="false"/>
+            </column>
+            <column name="updated_at" type="TIMESTAMPTZ" defaultValueComputed="now()">
+                <constraints nullable="false"/>
+            </column>
+        </createTable>
+        <rollback>
+            <dropTable tableName="account_reference_load"/>
+        </rollback>
+    </changeSet>
+
+</databaseChangeLog>

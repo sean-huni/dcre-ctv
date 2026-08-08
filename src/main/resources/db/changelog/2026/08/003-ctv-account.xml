@@ -1,0 +1,123 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<databaseChangeLog
+        xmlns="http://www.liquibase.org/xml/ns/dbchangelog"
+        xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+        xsi:schemaLocation="http://www.liquibase.org/xml/ns/dbchangelog
+        http://www.liquibase.org/xml/ns/dbchangelog/dbchangelog-latest.xsd">
+
+    <!-- ============================================================================
+         CTV v1 BASELINE, part 3: dcre_col.account, CTV's OWN materialised projection
+         of the versioned account reference artifact.
+
+         WHY THIS CHANGESET IS NEW, AND WHAT IT FIXES. Until now dcre_col.account was
+         created by NOTHING in version control. No changelog anywhere minted it: the
+         only path was an infra fixture, fixtures/seed/dcre_col_accounts.sql, applied
+         by env-reset.sh, so after a reset the table was simply absent and CTV
+         TECH-failed on "relation account does not exist" before reaching any verdict.
+         A table on the critical path of every arrival, owned by no service and
+         created by no migration, is the defect. CTV's changelog owns it now.
+
+         The shape below is the pre-existing collections shape, lifted from that
+         fixture, WITH ITS ORIGINAL NOT NULLs. It is deliberately not relaxed to
+         admit the mandates projection of the same artifact: a MANDATES row has no
+         branch code and a COLLECTIONS row has no account type, and per-context
+         materialisation exists precisely so each family keeps the constraints it
+         needs instead of widening to a nullable union.
+
+         THIS IS THE VERSION 1 BASELINE, so the usual re-run guards are absent for
+         the same reasons stated in parts 1 and 2: no ANY-checksum override, no
+         IF NOT EXISTS, no onFail="MARK_RAN". An object that cannot already exist
+         needs no guard, and a guard that cannot fire silently skips real work the
+         day its assumption changes.
+
+         The columns are pure typed tags. The three CHECK constraints are not, and
+         cannot be: see the second changeset.
+         ============================================================================ -->
+
+    <changeSet id="ctv-v1-account" author="dcre">
+        <createTable tableName="account">
+            <column name="id" type="UUID" defaultValueComputed="gen_random_uuid()">
+                <constraints primaryKey="true" nullable="false"/>
+            </column>
+            <column name="product_code" type="VARCHAR(8)">
+                <constraints nullable="false"/>
+            </column>
+            <column name="account_number" type="VARCHAR(34)">
+                <constraints nullable="false"/>
+            </column>
+            <column name="app_no" type="VARCHAR(34)">
+                <constraints nullable="false"/>
+            </column>
+            <column name="acc_type" type="VARCHAR(4)">
+                <constraints nullable="false"/>
+            </column>
+            <column name="branch_code" type="VARCHAR(11)">
+                <constraints nullable="false"/>
+            </column>
+            <column name="balance" type="DECIMAL(18,2)"/>
+            <column name="max_credit_limit" type="DECIMAL(18,2)"/>
+            <column name="cancel_reason" type="VARCHAR(64)"/>
+            <column name="country_id" type="BIGINT" defaultValueNumeric="1">
+                <constraints nullable="false"/>
+            </column>
+            <column name="edr_ind" type="BOOLEAN" defaultValueBoolean="false">
+                <constraints nullable="false"/>
+            </column>
+            <column name="pre_ind" type="BOOLEAN" defaultValueBoolean="false">
+                <constraints nullable="false"/>
+            </column>
+            <column name="process_status" type="VARCHAR(16)">
+                <constraints nullable="false"/>
+            </column>
+            <column name="status" type="VARCHAR(8)">
+                <constraints nullable="false"/>
+            </column>
+            <column name="status_reason" type="VARCHAR(64)"/>
+            <column name="ucn" type="VARCHAR(20)">
+                <constraints nullable="false"/>
+            </column>
+            <column name="client_id" type="BIGINT">
+                <constraints nullable="false"/>
+            </column>
+            <column name="created_at" type="TIMESTAMPTZ" defaultValueComputed="now()">
+                <constraints nullable="false"/>
+            </column>
+            <column name="updated_at" type="TIMESTAMPTZ" defaultValueComputed="now()">
+                <constraints nullable="false"/>
+            </column>
+        </createTable>
+        <addUniqueConstraint tableName="account" columnNames="account_number"
+                             constraintName="uq_account_account_number"/>
+        <rollback>
+            <dropTable tableName="account"/>
+        </rollback>
+    </changeSet>
+
+    <!-- LIQUIBASE-SQL-EXCEPTION: the open-source liquibase-core distribution ships NO
+         change type for a CHECK constraint. There is no addCheckConstraint tag, and no
+         dropCheckConstraint tag for the rollback, and the checkConstraint attribute
+         that <constraints> accepts is a VERIFIED NO-OP in liquibase-core 5.0.3: it
+         parses and CreateTableChange never reads it. Relying on it would put three
+         load-bearing invariants in the changelog in a form that emits no DDL at all,
+         which is worse than omitting them, because the changelog would claim them.
+         So the three CHECKs are applied from a SQL payload and dropped by <sql> on
+         rollback, and AccountConstraintsIT asserts each one actually REJECTS a bad row
+         rather than asserting it is merely present in the catalogue.
+
+         The payload lives under db/sql rather than beside this changeset because the
+         repo hook enforce-xml-changelog.sh refuses any non-.xml file under db/changelog
+         (rules/be/java/persistence.md point 22). That guard is aimed at SQL CHANGELOGS,
+         which vendor-lock a migration; this is a SQL PAYLOAD referenced by an XML
+         changeset. Keeping it outside db/changelog leaves the guard armed for
+         everything it is actually for. -->
+    <changeSet id="ctv-v1-account-checks" author="dcre">
+        <sqlFile path="db/sql/2026/08/003-ctv-account-checks.sql"
+                 relativeToChangelogFile="false" splitStatements="true" endDelimiter=";"/>
+        <rollback>
+            <sql>ALTER TABLE account DROP CONSTRAINT chk_account_amounts_nonneg</sql>
+            <sql>ALTER TABLE account DROP CONSTRAINT chk_account_product_amount</sql>
+            <sql>ALTER TABLE account DROP CONSTRAINT chk_account_product</sql>
+        </rollback>
+    </changeSet>
+
+</databaseChangeLog>

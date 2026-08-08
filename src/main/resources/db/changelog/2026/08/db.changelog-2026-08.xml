@@ -12,5 +12,7 @@
 
     <include file="db/changelog/2026/08/001-batch-metadata.xml"/>
     <include file="db/changelog/2026/08/002-ctv-validation-log.xml"/>
+    <include file="db/changelog/2026/08/003-ctv-account.xml"/>
+    <include file="db/changelog/2026/08/004-ctv-account-reference-load.xml"/>
 
 </databaseChangeLog>

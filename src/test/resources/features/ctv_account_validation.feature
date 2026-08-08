@@ -35,10 +35,11 @@ Feature: CTV account-level validation of inbound collection requests
     When CTV validates a collection of "1500.00" against account "63010000000005"
     Then the record is rejected with outcome "FAIL_EXCEEDS_CC_LIMIT"
 
-  Scenario: Collection against an account with no recorded cap on the DC flow
-    Given a collections account "63010000000006" with product "FNBCC", cap "none" and status "ACTIVE"
-    When CTV validates a collection of "100.00" against account "63010000000006"
-    Then the record is rejected with outcome "FAIL_ACCOUNT_NOT_FOUND"
+  # SCRUM-107: the "account with no recorded cap" scenario left this file rather than
+  # changing its expectation. The DC arm is unchanged (FAIL_ACCOUNT_NOT_FOUND), but
+  # chk_account_product_amount on dcre_col.account forbids that row outright, so it can
+  # no longer be reached through the table. It is asserted in VerdictChainAccountTierTest,
+  # where no table constraint stands between the test and the arm it is about.
 
   Scenario: Collection reusing an EndToEndId already seen in the file
     Given a collections account "63010000000007" with product "FNBRF", cap "5000.00" and status "ACTIVE"

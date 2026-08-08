@@ -3,14 +3,19 @@ package za.co.fnb.dcre.ctv;
 import org.springframework.jdbc.core.JdbcTemplate;
 
 import java.math.BigDecimal;
-import java.sql.Date;
-import java.time.LocalDate;
 import java.util.UUID;
 
 /**
- * Shared BDD seeding helpers: the same minimal AIS-shaped read models and
- * CRR-owned spine tables the existing job tests stand up (CtvEndoModeTest).
- * validation_log itself comes from this service's Liquibase changelog.
+ * Shared BDD seeding helpers for the CRR-owned spine tables the job tests stand up.
+ * {@code validation_log} comes from this service's Liquibase changelog.
+ *
+ * <p><b>SCRUM-107: {@code account} is NOT created here any more.</b> CTV's own changelog
+ * creates it (2026/08/003-ctv-account.xml), in the full 17-column collections shape with
+ * its NOT NULLs and its three CHECK constraints, so a helper that also minted a
+ * five-column stand-in with {@code IF NOT EXISTS} would be a silent no-op against the real
+ * table while looking like the thing under test. Seeding goes through
+ * {@link #insertAccount} and must satisfy the real constraints, because in production
+ * nothing can put a row in that table which does not.
  */
 public final class CtvTestTables {
 
@@ -21,14 +26,6 @@ public final class CtvTestTables {
     }
 
     public static void create(JdbcTemplate jdbc) {
-        jdbc.execute("""
-                CREATE TABLE IF NOT EXISTS account (
-                    id UUID NOT NULL DEFAULT gen_random_uuid() PRIMARY KEY,
-                    account_number VARCHAR(34) NOT NULL UNIQUE,
-                    product_code VARCHAR(8) NOT NULL,
-                    balance DECIMAL(18,2) NULL,
-                    max_credit_limit DECIMAL(18,2) NULL,
-                    process_status VARCHAR(16) NOT NULL)""");
         jdbc.execute("""
                 CREATE TABLE IF NOT EXISTS tx_header (
                     id UUID NOT NULL DEFAULT gen_random_uuid() PRIMARY KEY,
@@ -46,17 +43,40 @@ public final class CtvTestTables {
                     UNIQUE (arrival_id, sequence))""");
     }
 
+    /**
+     * Seeds one row of the REAL collections shape. The five columns CTV reads are the
+     * caller's; the other eleven are fixture values chosen to satisfy the NOT NULLs, which
+     * is the point: production cannot hold a row that does not.
+     *
+     * <p>{@code cap} of {@code "none"} is REJECTED rather than mapped to NULL.
+     * {@code chk_account_product_amount} forbids that row outright (FNBRF carries a
+     * balance and no limit, FNBCC a limit and no balance), so a test seeding it would be
+     * asserting against a state the table cannot reach. The unset-cap arm of the chain is
+     * still covered, in {@code VerdictChainAccountTierTest}, which is where it lives and
+     * where no table constraint is in the way.
+     */
     public static void insertAccount(JdbcTemplate jdbc, String number, String productCode,
                                      String cap, String status) {
-        BigDecimal capValue = "none".equals(cap) ? null : new BigDecimal(cap);
+        if ("none".equals(cap)) {
+            throw new IllegalArgumentException("dcre_col.account cannot hold a row with no cap:"
+                    + " chk_account_product_amount requires a balance for FNBRF and a limit for"
+                    + " FNBCC. Assert the unset-cap arm in VerdictChainAccountTierTest instead.");
+        }
+        BigDecimal capValue = new BigDecimal(cap);
         boolean balanceCarrying = productCode.startsWith("FNBRF");
         jdbc.update("""
-                INSERT INTO account (account_number, product_code, balance, max_credit_limit, process_status)
-                VALUES (?,?,?,?,?)""",
-                number, productCode,
+                INSERT INTO account (account_number, product_code, status, app_no, acc_type,
+                                     branch_code, balance, max_credit_limit, cancel_reason,
+                                     country_id, edr_ind, pre_ind, process_status, status_reason,
+                                     ucn, client_id)
+                VALUES (?,?,'AAUT',?,'CACC','250205',?,?,NULL,1,false,false,?,NULL,?,2)""",
+                number, productCode, "APP-" + number,
                 balanceCarrying ? capValue : null,
                 balanceCarrying ? null : capValue,
-                status);
+                // ucn is VARCHAR(20) and the account number fits: no prefix, which would
+                // overflow it for a 17-digit number and fail for a reason unrelated to
+                // whatever the test is actually about.
+                status, number);
     }
 
     public static void insertHeader(JdbcTemplate jdbc, UUID arrival, int txCount) {

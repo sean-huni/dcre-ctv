@@ -31,13 +31,22 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 /**
  * ENDO-mode (dcre.flow-dc=false) verdict semantics, SCRUM-32 / A-20 draft.
  *
- * [SYNTHETIC-CONTRACT R-35] The pass-through semantics asserted here are
- * invented for the A-20 draft: on ENDO, AIS creates absent accounts
- * downstream (create-if-absent), so an unknown account and a known account
- * with a NULL cap (freshly-creatable, cap check post-init) both PASS.
- * Existing over-cap accounts keep their DC failure outcome, and the mandate
- * layer stays off (R-20). DC-flow behavior is untouched; the manifest parity
- * test remains the DC oracle.
+ * <p><b>SCRUM-107 INVERTED two assertions in this suite, and they were asserting the bug.</b>
+ * An unknown account used to be expected to PASS on ENDO, on the A-20 draft reasoning that
+ * it would be created downstream (create-if-absent). That left the first tier of the chain
+ * answering PASS in exactly the case it exists to catch: a fail-closed control that does
+ * not fail closed, silently, with no suite red and nothing in the log. The identical defect
+ * was found in {@code payments/ptv}, whose chain is a fork of this one, and both are
+ * repaired the same way. Sequences 1 and 2 below therefore expect
+ * {@code FAIL_ACCOUNT_NOT_FOUND} where they expected PASS, and the WARN assertion counts
+ * three exclusions where it counted one.
+ *
+ * <p>[SYNTHETIC-CONTRACT R-35] What survives the repair: an EXISTING account whose cap is
+ * unset still passes on ENDO, because that row is present and only its limit is unknown.
+ * That arm is asserted in {@code VerdictChainAccountTierTest} rather than here, since
+ * {@code chk_account_product_amount} on {@code dcre_col.account} makes such a row
+ * unreachable through the table. Existing over-cap accounts keep their DC failure outcome,
+ * and the mandate layer stays off (R-20). The manifest parity test remains the DC oracle.
  */
 @SpringBootTest(properties = {"spring.batch.job.enabled=false",
         "dcre.exchange-root=build/test-exchange", "dcre.flow-dc=false"})
@@ -72,7 +81,7 @@ class CtvEndoModeTest {
     JdbcTemplate jdbc;
 
     @Test
-    void endoPassesThroughUnknownAndNullCapAccountsButKeepsOverCapFailing() throws Exception {
+    void endoRejectsUnknownAccountsAndKeepsOverCapFailing() throws Exception {
         UUID arrival = UUID.randomUUID();
         seedReferenceData();
         seedSpine(arrival);
@@ -90,10 +99,10 @@ class CtvEndoModeTest {
                 "the over-cap entry must still fail on ENDO");
 
         Map<Integer, String> expected = Map.of(
-                1, "PASS",                    // unknown account: AIS creates it downstream
-                2, "PASS",                    // second unknown account, same pass-through
+                1, "FAIL_ACCOUNT_NOT_FOUND",  // INVERTED by SCRUM-107: was PASS, and was the bug
+                2, "FAIL_ACCOUNT_NOT_FOUND",  // INVERTED by SCRUM-107: second unknown account
                 3, "PASS",                    // known, under cap
-                4, "PASS",                    // known, NULL cap: cap check post-init
+                4, "PASS",                    // known credit card, under its limit
                 5, "FAIL_EXCEEDS_RF_BALANCE", // existing over-cap keeps its DC outcome
                 6, "PASS"                     // targets a mandate, but ENDO has no gate (R-20)
         );
@@ -104,42 +113,38 @@ class CtvEndoModeTest {
                 }, arrival);
         assertEquals(expected, actual, "ENDO verdicts per A-20 draft [SYNTHETIC-CONTRACT R-35]");
 
-        // R-38 exclusion visibility: exactly one FAIL verdict -> exactly one WARN at decision time.
+        // R-38 exclusion visibility: one WARN per FAIL verdict at decision time. THREE now,
+        // not one: the two rejected unknown accounts are exclusions like any other and must
+        // be as visible to an operator as the over-cap one.
         List<String> exclusionWarns = warns.list.stream()
                 .filter(e -> e.getLevel() == Level.WARN)
                 .map(ILoggingEvent::getFormattedMessage)
                 .filter(m -> m.contains("excluded stage=CTV"))
+                .sorted()
                 .toList();
-        assertEquals(1, exclusionWarns.size(), "one WARN per FAIL verdict (R-38)");
-        assertEquals("excluded stage=CTV arrival=" + arrival + " seq=5 e2e=ENDO-E2E-00005"
-                + " reason=CTV_FAIL_EXCEEDS_RF_BALANCE", exclusionWarns.get(0),
-                "uniform R-38 WARN shape");
+        assertEquals(3, exclusionWarns.size(), "one WARN per FAIL verdict (R-38), was: " + exclusionWarns);
+        assertEquals(List.of(
+                "excluded stage=CTV arrival=" + arrival + " seq=1 e2e=ENDO-E2E-00001"
+                        + " reason=CTV_FAIL_ACCOUNT_NOT_FOUND",
+                "excluded stage=CTV arrival=" + arrival + " seq=2 e2e=ENDO-E2E-00002"
+                        + " reason=CTV_FAIL_ACCOUNT_NOT_FOUND",
+                "excluded stage=CTV arrival=" + arrival + " seq=5 e2e=ENDO-E2E-00005"
+                        + " reason=CTV_FAIL_EXCEEDS_RF_BALANCE"),
+                exclusionWarns, "uniform R-38 WARN shape, one per exclusion");
         validationLogger.detachAppender(warns);
     }
 
     void seedReferenceData() {
-        // Minimal AIS-shaped read models (CTV maps only these columns).
-        // [SYNTHETIC-CONTRACT R-35] Deliberately WITHOUT the fixture seed's
-        // product/cap CHECK constraint: the ENDO NULL-cap row models exactly
-        // the pre-init account state that constraint forbids for settled rows.
-        jdbc.execute("""
-                CREATE TABLE IF NOT EXISTS account (
-                    id UUID NOT NULL DEFAULT gen_random_uuid() PRIMARY KEY,
-                    account_number VARCHAR(34) NOT NULL UNIQUE,
-                    product_code VARCHAR(8) NOT NULL,
-                    balance DECIMAL(18,2) NULL,
-                    max_credit_limit DECIMAL(18,2) NULL,
-                    process_status VARCHAR(16) NOT NULL)""");
-        // SCRUM-107: dcre_col.mandate was dropped. ENDO never had a mandate gate
-        upsertAccount("62000000000001", "FNBRF", new BigDecimal("5000.00"), null);   // under cap
-        upsertAccount("62000000000002", "FNBCC", null, null);                        // NULL cap
-        upsertAccount("62000000000003", "FNBRF", new BigDecimal("100.00"), null);    // over cap target
-    }
-
-    void upsertAccount(String number, String productCode, BigDecimal balance, BigDecimal limit) {
-        jdbc.update("""
-                UPSERT INTO account (account_number, product_code, balance, max_credit_limit, process_status)
-                VALUES (?,?,?,?,'ACTIVE')""", number, productCode, balance, limit);
+        // SCRUM-107: dcre_col.account is created by CTV's OWN changelog now, in the full
+        // collections shape with its NOT NULLs and its three CHECK constraints, and filled
+        // in production by accountReferenceLoadJob from the versioned artifact. This suite
+        // no longer stands up a five-column stand-in of its own: a CREATE TABLE IF NOT
+        // EXISTS would be a silent no-op against the real table while looking like the
+        // thing under test.
+        // dcre_col.mandate was dropped; ENDO never had a mandate gate.
+        CtvTestTables.insertAccount(jdbc, "62000000000001", "FNBRF", "5000.00", "ACTIVE"); // under cap
+        CtvTestTables.insertAccount(jdbc, "62000000000002", "FNBCC", "5000.00", "ACTIVE"); // under limit
+        CtvTestTables.insertAccount(jdbc, "62000000000003", "FNBRF", "100.00", "ACTIVE");  // over cap
     }
 
     void seedSpine(UUID arrival) {

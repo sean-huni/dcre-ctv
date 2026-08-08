@@ -1,5 +1,7 @@
 package za.co.fnb.dcre.ctv.data.repo;
 
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Component;
 import za.co.fnb.dcre.ctv.service.VerdictChain.Account;
@@ -30,12 +32,29 @@ import java.util.stream.Collectors;
  * read-write transaction): CockroachDB requires AS OF SYSTEM TIME to be the
  * first statement of its transaction and makes that transaction read-only, so
  * it cannot share the verdict-writing transaction.
+ *
+ * <p><b>SCRUM-107.</b> The account master is {@code dcre_col.account}, on the PRIMARY
+ * collections datasource, and since this wave CTV's own Liquibase changelog creates it
+ * and CTV's own loader job fills it from the versioned reference artifact. It is no
+ * longer read out of a shared reference database over a second connection.
+ *
+ * <p>An empty result is now a BUSINESS signal: the chain turns it into
+ * {@code FAIL_ACCOUNT_NOT_FOUND} on both flows. A read that could not RUN therefore must
+ * never degrade to an empty map, or an outage would be reported as an arrival's worth of
+ * business rejections. Every failure raises {@link ReferenceUnavailableException} and is
+ * logged at ERROR under its own token with the relation and the SQLSTATE, so an operator
+ * can tell the two apart in the log as well as in the outcome.
  */
 @Component
 public class ReferenceSnapshotDao {
 
+    /** The account master relation. Named once: it is in the SQL, the log and the exception. */
+    static final String ACCOUNT_RELATION = "account";
+
     /** cluster_logical_timestamp() is a plain HLC decimal; guard before inlining. */
     private static final Pattern HLC_DECIMAL = Pattern.compile("\\d+(\\.\\d+)?");
+
+    private static final Logger log = LoggerFactory.getLogger(ReferenceSnapshotDao.class);
 
     private final JdbcTemplate jdbc;
     private final DataSource dataSource;
@@ -56,7 +75,7 @@ public class ReferenceSnapshotDao {
             return byNumber;
         }
         String sql = "SELECT account_number, product_code, balance, max_credit_limit, process_status "
-                + "FROM account AS OF SYSTEM TIME '" + requireHlc(asOf) + "' "
+                + "FROM " + ACCOUNT_RELATION + " AS OF SYSTEM TIME '" + requireHlc(asOf) + "' "
                 + "WHERE account_number IN (" + placeholders(accountNumbers.size()) + ")";
         query(sql, accountNumbers, rs -> {
             Account account = new Account(rs.getString("account_number"), rs.getString("product_code"),
@@ -85,7 +104,13 @@ public class ReferenceSnapshotDao {
                 }
             }
         } catch (SQLException e) {
-            throw new IllegalStateException("as-of reference read failed", e);
+            // TECHNICAL, never a verdict. Logged here rather than at the catch site far
+            // above so the SQLSTATE and the relation are on the same line as the token an
+            // operator greps for; "42P01 relation does not exist" and "08001 connection
+            // refused" are the two shapes this actually takes in dcre_col today.
+            log.error("reference-store-unavailable stage=CTV relation={} sqlState={} reason={}",
+                    ACCOUNT_RELATION, e.getSQLState(), e.getMessage());
+            throw new ReferenceUnavailableException(ACCOUNT_RELATION, e);
         }
     }
 

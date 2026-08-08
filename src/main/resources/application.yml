@@ -3,6 +3,17 @@ spring:
   threads:
     virtual:
       enabled: true
+  batch:
+    job:
+      # SCRUM-107: CTV carries TWO jobs now, ctvJob (the validation flow) and
+      # accountReferenceLoadJob (the reference-artifact loader). Boot's
+      # JobLauncherApplicationRunner runs EVERY Job bean in the context unless this
+      # property names one, so leaving it unset would have started running the loader on
+      # every arrival the moment the second bean appeared. This is Boot's own selection
+      # mechanism, not a bespoke one. The default keeps the validation flow as the default
+      # job, so every existing caller (AGT passes no job name) is unchanged; a loader run
+      # is DCRE_CTV_JOB_NAME=accountReferenceLoadJob. Pinned by CtvJobSelectionTest.
+      name: ${DCRE_CTV_JOB_NAME:ctvJob}
   datasource:
     url: ${DCRE_DB_URL:jdbc:postgresql://localhost:26257/dcre_col?sslmode=disable}
     username: ${DCRE_DB_USER:root}
@@ -43,6 +54,30 @@ dcre:
     mandates-db-url: ${DCRE_CTV_MANDATES_DB_URL:jdbc:postgresql://localhost:26257/dcre_man?sslmode=disable}
     mandates-db-user: ${DCRE_CTV_MANDATES_DB_USER:root}
     mandates-db-password: ${DCRE_CTV_MANDATES_DB_PASSWORD:}
+    # SCRUM-107: the versioned account reference artifact. ACS, the shared dcre_acs
+    # reference database, is retired: it had no authoritative source, no accountable
+    # owner, no ingestion of its own and no freshness contract, which made it a shared
+    # integration database wearing the costume of a bounded context. The rows now travel
+    # as ONE immutable versioned artifact and CTV materialises its OWN projection into
+    # dcre_col.account, with its OWN NOT NULL constraints. No shared store, no
+    # cross-context read.
+    reference:
+      account:
+        # Relative form identical to dcre.exchange-root above: same six ../ hops from
+        # this service directory to infra/dcre-infra, so a clean clone runs with no .env
+        # (12FactorApp Alignment - https://12factor.net/).
+        root: ${DCRE_CTV_ACCOUNT_REFERENCE_ROOT:../../../../../../infra/dcre-infra/fixtures/reference/account}
+        # The consumer DECLARES the version it wants. There is no "newest directory"
+        # behaviour: that is a fail-open, because a directory appearing beside this one
+        # would silently change what every verdict is judged against. A manifest
+        # declaring anything else FAILS the load.
+        dataset-version: ${DCRE_CTV_ACCOUNT_DATASET_VERSION:2026.08.09-001}
+        # max-age: DELIBERATELY UNSET, and it stays unset until A-4 lands. The check is
+        # wired and INERT: while this is absent the loader logs at INFO on every run that
+        # freshness is not enforced, and proceeds. Setting it here arms the gate with no
+        # code change. Do NOT invent a number, in code, in this file, or as a test
+        # resource default: an unowned production rule wearing the costume of a decision
+        # is worse than an admitted gap.
     acceptance-mode:
       default: ${DCRE_CTV_ACCEPTANCE_MODE_DEFAULT:ALL_OR_NOTHING}
       # Per-client override map. No DCRE_* env var is wired for the map: set
