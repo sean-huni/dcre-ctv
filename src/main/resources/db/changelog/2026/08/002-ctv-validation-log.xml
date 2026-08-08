@@ -34,8 +34,8 @@
              tested rather than assumed. The DC-flow mandate gate reads
              dcre_man.man_ctv_view, the contract the mandates family owns.
 
-         ONE guard IS retained, and it is the exception that the rule above is about:
-         see the changeset comment. Pure typed tags throughout, no raw-SQL body.
+         NO re-run guard is retained: see the changeset comment for the one that was
+         and why it went. Pure typed tags throughout, no raw-SQL body.
 
          validation_log is CTV's table: CTV is its only writer (R-04), one row per
          validated detail record, keyed on the arrival and the record sequence.
@@ -43,31 +43,22 @@
 
     <changeSet id="ctv-v1-validation-log" author="dcre">
         <!--
-          KEPT DELIBERATELY, unlike every other re-run guard in this baseline.
+          NO re-run guard, like every other changeset in this baseline.
 
-          validation_log CAN already exist on an empty v1 database, so this guard is
-          live rather than dead. dcre_col is shared, and CRG mints validation_log as
-          a bootstrap read-source when its report window fires before CTV's first
-          arrival (crg 001-crg.xml, changeset 001-bootstrap-sources-crg). Which of
-          the two reaches Liquibase first is a race decided by pod start order, not
-          by anything this changelog controls, so an unguarded createTable here would
-          crashloop CTV on exactly the orderings where CRG wins.
+          An earlier draft of this file kept an onFail="MARK_RAN" tableExists guard,
+          on the grounds that CRG minted validation_log as a bootstrap read-source
+          and could win a pod-start race. CRG's own v1 rewrite removed that mint,
+          along with its mint of every other relation it does not own, so the reason
+          no longer holds. CTV is now the sole creator of validation_log in dcre_col,
+          verified across the estate: the only other createTable tags for this name
+          are payments ptv and payments prg, and both target dcre_pay, a different
+          database.
 
-          MARK_RAN rather than CONTINUE is correct for THIS dependency, and the
-          distinction is the A-79 lesson. CONTINUE is for a dependency that has not
-          bootstrapped YET and will exist later, where recording the skip makes it
-          permanent. Here the guarded object is the thing this changeset creates: if
-          it already exists, the work is genuinely done and will never need doing
-          again, so recording it as applied is the truth.
-
-          CRG's DDL is column-for-column identical to the createTable below,
-          including the uq_validation_arrival_sequence constraint, so either winner
-          leaves the same table.
+          That makes the guard exactly what this baseline is meant to remove: one
+          that cannot fire. Worse than dead, it carried a justification that had
+          quietly become false, which is the more expensive kind of leftover,
+          because the next reader would have believed it.
         -->
-        <preConditions onFail="MARK_RAN">
-            <not><tableExists tableName="validation_log"/></not>
-        </preConditions>
-
         <createTable tableName="validation_log">
             <column name="id" type="UUID" defaultValueComputed="gen_random_uuid()">
                 <constraints primaryKey="true" nullable="false"/>
