@@ -91,6 +91,7 @@ class CtvEndoModeTest {
         warns.start();
         validationLogger.addAppender(warns);
 
+        CtvTestTables.materialiseAccountReference(jdbc);
         JobExecution run = jobOperator.start(ctvJob, new JobParametersBuilder()
                 .addString("arrival.id", arrival.toString(), true)
                 .toJobParameters());

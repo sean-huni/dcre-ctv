@@ -51,6 +51,7 @@ public class CtvEndoSteps {
         CtvTestTables.insertEntry(jdbc, arrival, seq,
                 "ENDO-E2E-" + arrival.toString().substring(0, 8) + "-" + seq, account, null, amount);
         CtvTestTables.insertHeader(jdbc, arrival, seq);
+        CtvTestTables.materialiseAccountReference(jdbc);
         execution = jobOperator.start(ctvJob, new JobParametersBuilder()
                 .addString("arrival.id", arrival.toString(), true)
                 .toJobParameters());

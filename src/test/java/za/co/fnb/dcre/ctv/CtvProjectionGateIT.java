@@ -114,6 +114,7 @@ class CtvProjectionGateIT {
         insertEntry(arrival, 3, "E2E-P-3", null);          // NULL mandate_ref -> gate no-op -> PASS
         insertEntry(arrival, 4, "E2E-P-4", "MND-UNKNOWN"); // absent projection -> reject
         CtvTestTables.insertHeader(jdbc, arrival, 4, "FNBCC01");
+        CtvTestTables.materialiseAccountReference(jdbc);
 
         JobExecution run = jobOperator.start(ctvJob, new JobParametersBuilder()
                 .addString("arrival.id", arrival.toString(), true)

@@ -42,24 +42,27 @@ public class ValidationService {
     public sealed interface HeaderCheck {
         record FileFatal(String reason) implements HeaderCheck { }
         record Ok(int txCount, String clientToken, String asOfTimestamp,
-                  String mandateAsOfTimestamp) implements HeaderCheck { }
+                  String mandateAsOfTimestamp, String accountDatasetVersion) implements HeaderCheck { }
     }
 
     private final TxHeaderViewRepo headers;
     private final TxEntryViewRepo entries;
     private final ReferenceSnapshotDao referenceSnapshot;
+    private final AccountReferenceGuard accountReferenceGuard;
     private final MandateGate mandateGate;
     private final ValidationLogRepo verdicts;
     private final ValidationLogBatchDao verdictBatch;
     private final boolean dcFlow;
 
     public ValidationService(TxHeaderViewRepo headers, TxEntryViewRepo entries,
-                             ReferenceSnapshotDao referenceSnapshot, MandateGate mandateGate,
+                             ReferenceSnapshotDao referenceSnapshot,
+                             AccountReferenceGuard accountReferenceGuard, MandateGate mandateGate,
                              ValidationLogRepo verdicts, ValidationLogBatchDao verdictBatch,
                              @Value("${dcre.flow-dc:true}") boolean dcFlow) {
         this.headers = headers;
         this.entries = entries;
         this.referenceSnapshot = referenceSnapshot;
+        this.accountReferenceGuard = accountReferenceGuard;
         this.mandateGate = mandateGate;
         this.verdicts = verdicts;
         this.verdictBatch = verdictBatch;
@@ -79,8 +82,18 @@ public class ValidationService {
             return new HeaderCheck.FileFatal("spine count " + spineCount + " != declared " + header.getTxCount());
         }
         String clientToken = header.getInitgPty() == null ? "" : header.getInitgPty().strip();
+        String asOfTimestamp = referenceSnapshot.snapshotTimestamp();
+        // The account-reference guard runs HERE, once, against the snapshot every range will
+        // read, and AFTER the FileFatal arm above: a spine/declared count mismatch is a true
+        // finding about the file that needs no reference data, so it must not be masked by a
+        // deployment fault. Below this line the run is going to form verdicts, and forming
+        // them against a table nothing ever loaded would turn a missing deployment step into
+        // an arrival's worth of FAIL_ACCOUNT_NOT_FOUND. It throws rather than returning a
+        // HeaderCheck arm on purpose: FileFatal is a BUSINESS verdict AGT reads off the
+        // outcome seam, and this is technical, so it must fail the step instead.
+        String accountDatasetVersion = accountReferenceGuard.requireMaterialised(asOfTimestamp);
         return new HeaderCheck.Ok(header.getTxCount(), clientToken,
-                referenceSnapshot.snapshotTimestamp(), mandateGate.snapshot(dcFlow));
+                asOfTimestamp, mandateGate.snapshot(dcFlow), accountDatasetVersion);
     }
 
     /**

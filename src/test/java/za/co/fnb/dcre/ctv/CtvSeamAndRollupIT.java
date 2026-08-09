@@ -95,6 +95,11 @@ class CtvSeamAndRollupIT {
     }
 
     private JobExecution run(UUID arrival) throws Exception {
+        // These scenarios collect against accounts the store deliberately does NOT hold, so
+        // the table must still be LOADED for that absence to be a business fact rather than
+        // a missing deployment. materialiseAccountReference seeds the sentinel that stands
+        // for the rest of the artifact and records the load.
+        CtvTestTables.materialiseAccountReference(jdbc);
         return jobOperator.start(ctvJob, new JobParametersBuilder()
                 .addString("arrival.id", arrival.toString(), true)
                 .toJobParameters());

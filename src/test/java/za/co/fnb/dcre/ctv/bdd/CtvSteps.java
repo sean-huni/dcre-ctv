@@ -131,6 +131,10 @@ public class CtvSteps {
     }
 
     void run(String attempt) throws Exception {
+        // The scenario's accounts are seeded by now; record the load that put them there, as
+        // a deployed database would have. Without it the account-reference guard fails the
+        // run, which is correct: a table nothing loaded cannot produce business verdicts.
+        CtvTestTables.materialiseAccountReference(jdbc);
         JobParametersBuilder builder = new JobParametersBuilder()
                 .addString("arrival.id", arrival.toString(), true);
         if (attempt != null) {

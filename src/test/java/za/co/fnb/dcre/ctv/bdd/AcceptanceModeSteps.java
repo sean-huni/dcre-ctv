@@ -79,6 +79,7 @@ public class AcceptanceModeSteps {
 
     @When("the CTV job runs for the arrival")
     public void runJob() throws Exception {
+        CtvTestTables.materialiseAccountReference(jdbc);
         execution = jobOperator.start(ctvJob, new JobParametersBuilder()
                 .addString("arrival.id", arrival.toString(), true)
                 .toJobParameters());

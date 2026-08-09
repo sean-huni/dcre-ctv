@@ -63,10 +63,22 @@ dcre:
     # cross-context read.
     reference:
       account:
-        # Relative form identical to dcre.exchange-root above: same six ../ hops from
-        # this service directory to infra/dcre-infra, so a clean clone runs with no .env
-        # (12FactorApp Alignment - https://12factor.net/).
-        root: ${DCRE_CTV_ACCOUNT_REFERENCE_ROOT:../../../../../../infra/dcre-infra/fixtures/reference/account}
+        # DERIVED FROM THE EXCHANGE ROOT, and that is the whole point: DCRE_EXCHANGE_ROOT
+        # is already injected into every stage pod as /exchange, backed by the
+        # dcre-exchange PVC, which is the ONLY volume a stage pod has. So in a pod this
+        # resolves to /exchange/reference/account with NO new AGT env injection at all,
+        # and on a dev machine with no .env it resolves to
+        # infra/dcre-infra/exchange/reference/account (12FactorApp Alignment -
+        # https://12factor.net/). The previous default pointed six ../ hops at
+        # infra/dcre-infra/fixtures/reference/account, a path that resolves only on a
+        # developer's machine and cannot exist in a pod, so the loader could never have
+        # found the artifact in a deployed environment.
+        #
+        # fixtures/reference/account stays the committed SOURCE of the artifact in git.
+        # infra/dcre-infra/scripts/materialise-account-reference.sh VALIDATES it and
+        # stages a copy into the exchange root at deploy time; this service reads the
+        # STAGED copy and never the git fixtures path.
+        root: ${DCRE_CTV_ACCOUNT_REFERENCE_ROOT:${DCRE_EXCHANGE_ROOT:../../../../../../infra/dcre-infra/exchange}/reference/account}
         # The consumer DECLARES the version it wants. There is no "newest directory"
         # behaviour: that is a fail-open, because a directory appearing beside this one
         # would silently change what every verdict is judged against. A manifest

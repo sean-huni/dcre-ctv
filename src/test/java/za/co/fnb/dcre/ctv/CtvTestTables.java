@@ -79,6 +79,52 @@ public final class CtvTestTables {
                 status, number);
     }
 
+    /** The dataset version every fixture load claims. Asserted by AccountReferenceGuardIT. */
+    public static final String FIXTURE_DATASET_VERSION = "2026.08.09-001";
+
+    /**
+     * An account no scenario ever collects against. It stands for the REST of the artifact:
+     * a real load applies every COLLECTIONS row, while these fixtures seed only the two or
+     * three accounts a scenario is about. Without it a scenario that deliberately seeds no
+     * account (the "account absent from the store" case) would describe a database with a
+     * load record over an empty table, which is a state production cannot reach.
+     */
+    public static final String SENTINEL_ACCOUNT = "63000000000000";
+
+    /**
+     * Puts the fixture database into the state a DEPLOYED one is in: the account reference
+     * has been materialised, and {@code account_reference_load} records it. Every test that
+     * runs {@code ctvJob} must call this immediately before starting the job.
+     *
+     * <p>Without it the run fails the account-reference guard, and that is not an
+     * inconvenience to be worked around: it is the guard doing its job. Before this wave
+     * these suites ran against an empty {@code account} table and got
+     * {@code FAIL_ACCOUNT_NOT_FOUND} verdicts that looked like findings about the input.
+     *
+     * <p>Idempotent: the load record is REPLACED, so the recorded count always matches what
+     * the table actually holds at the moment the job starts. A stale record claiming a
+     * different number would be a second place holding one fact.
+     */
+    public static void materialiseAccountReference(JdbcTemplate jdbc) {
+        jdbc.update("""
+                INSERT INTO account (account_number, product_code, status, app_no, acc_type,
+                                     branch_code, balance, max_credit_limit, cancel_reason,
+                                     country_id, edr_ind, pre_ind, process_status, status_reason,
+                                     ucn, client_id)
+                VALUES (?,'FNBRF','AAUT','APP-SENTINEL','CACC','250205',1.00,NULL,NULL,1,
+                        false,false,'ACTIVE',NULL,?,2)
+                ON CONFLICT (account_number) DO NOTHING""",
+                SENTINEL_ACCOUNT, SENTINEL_ACCOUNT);
+        Integer applied = jdbc.queryForObject("SELECT count(*) FROM account", Integer.class);
+        jdbc.update("DELETE FROM account_reference_load");
+        jdbc.update("""
+                INSERT INTO account_reference_load (dataset_version, schema_version, source_id,
+                    effective_ts, publication_ts, row_count, checksum, applied_row_count)
+                VALUES (?, 1, 'fixture:CtvTestTables', '2026-08-09T00:00:00Z',
+                        '2026-08-09T00:00:00Z', ?, 'fixture', ?)""",
+                FIXTURE_DATASET_VERSION, applied, applied);
+    }
+
     public static void insertHeader(JdbcTemplate jdbc, UUID arrival, int txCount) {
         insertHeader(jdbc, arrival, txCount, "FNBCC01");
     }

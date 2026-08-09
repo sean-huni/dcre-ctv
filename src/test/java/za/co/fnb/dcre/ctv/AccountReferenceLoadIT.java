@@ -27,7 +27,9 @@ import java.util.List;
 import java.util.Map;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /**
  * {@code accountReferenceLoadJob} against a real database: what a successful load leaves
@@ -210,6 +212,67 @@ class AccountReferenceLoadIT {
                                          ucn, client_id)
                     VALUES ('62000000000099','FNBRF','AAUT','APP-PREV','CACC','250205',1234.00,
                             NULL,NULL,1,false,false,'ACTIVE',NULL,'100000000099',2)""");
+        }
+    }
+
+    // ----------------------------------------- red-proof 6: the artifact is not there at all
+
+    /**
+     * State (a) of the three the reference can be in, asserted at the JOB level rather than
+     * only at the reader's. {@code AccountArtifactReaderTest} proves the reader refuses an
+     * absent directory; this proves the refusal reaches the job as a FAILED status carrying
+     * a message that names the artifact, which is what an operator actually sees.
+     */
+    @Nested
+    @SpringBootTest(properties = {"spring.batch.job.enabled=false",
+            "dcre.exchange-root=build/test-exchange"})
+    class TheArtifactIsAbsent {
+
+        static final String MISSING_ROOT = "build/test-artifact-that-does-not-exist";
+
+        @DynamicPropertySource
+        static void props(DynamicPropertyRegistry registry) {
+            registerDatabase(registry);
+            registry.add("dcre.ctv.reference.account.root", () -> MISSING_ROOT);
+            registry.add("dcre.ctv.reference.account.dataset-version", () -> REAL_VERSION);
+        }
+
+        @Autowired
+        Job accountReferenceLoadJob;
+
+        @Autowired
+        JobOperator jobOperator;
+
+        @Autowired
+        JdbcTemplate jdbc;
+
+        @Test
+        void theLoadFailsAndTheMessageNamesTheArtifactItCouldNotFind() throws Exception {
+            jdbc.update("DELETE FROM account");
+            jdbc.update("DELETE FROM account_reference_load");
+            assertFalse(Files.exists(Path.of(MISSING_ROOT, REAL_VERSION)),
+                    "control: this test is only meaningful while the path genuinely does not exist");
+
+            JobExecution run = jobOperator.start(accountReferenceLoadJob,
+                    new JobParametersBuilder().addString("run.id", "absent-1", true).toJobParameters());
+
+            assertEquals(BatchStatus.FAILED, run.getStatus(),
+                    "an absent artifact is a technical FAILURE, never 'nothing to load'");
+
+            String failure = run.getAllFailureExceptions().stream()
+                    .map(Throwable::toString).reduce("", (a, b) -> a + " | " + b);
+            // Asserting the MESSAGE, not merely that the job died: a bare FAILED assertion
+            // passes for every reason a job can fail, including the ones meaning the loader
+            // never ran at all.
+            assertTrue(failure.contains("absent or is not a directory"),
+                    "the failure must say the artifact is absent, was: " + failure);
+            assertTrue(failure.contains(MISSING_ROOT) && failure.contains(REAL_VERSION),
+                    "and must NAME the path and version it looked for, or the operator is sent"
+                            + " to guess which artifact the loader wanted, was: " + failure);
+
+            assertEquals(0, jdbc.queryForObject(
+                    "SELECT count(*) FROM account_reference_load", Integer.class),
+                    "a load that could not read anything must record nothing");
         }
     }
 

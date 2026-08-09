@@ -16,6 +16,7 @@ import java.util.Collection;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 import java.util.regex.Pattern;
 import java.util.stream.Collectors;
 
@@ -51,6 +52,9 @@ public class ReferenceSnapshotDao {
     /** The account master relation. Named once: it is in the SQL, the log and the exception. */
     static final String ACCOUNT_RELATION = "account";
 
+    /** The record of WHICH artifact version this database currently holds. */
+    static final String LOAD_RELATION = "account_reference_load";
+
     /** cluster_logical_timestamp() is a plain HLC decimal; guard before inlining. */
     private static final Pattern HLC_DECIMAL = Pattern.compile("\\d+(\\.\\d+)?");
 
@@ -77,7 +81,7 @@ public class ReferenceSnapshotDao {
         String sql = "SELECT account_number, product_code, balance, max_credit_limit, process_status "
                 + "FROM " + ACCOUNT_RELATION + " AS OF SYSTEM TIME '" + requireHlc(asOf) + "' "
                 + "WHERE account_number IN (" + placeholders(accountNumbers.size()) + ")";
-        query(sql, accountNumbers, rs -> {
+        query(ACCOUNT_RELATION, sql, accountNumbers, rs -> {
             Account account = new Account(rs.getString("account_number"), rs.getString("product_code"),
                     rs.getBigDecimal("balance"), rs.getBigDecimal("max_credit_limit"),
                     rs.getString("process_status"));
@@ -86,11 +90,36 @@ public class ReferenceSnapshotDao {
         return byNumber;
     }
 
+    /** What the newest {@code account_reference_load} row says about the CURRENT table. */
+    public record LoadRecord(String datasetVersion, int appliedRowCount) {
+    }
+
+    /**
+     * The newest load record, or empty when the loader has NEVER run in this database.
+     *
+     * <p>Read AS OF the SAME snapshot every verdict range reads, and on the same own-connection
+     * path, so three things hold at once: the answer describes exactly the {@code account}
+     * contents the verdicts are judged against, a mid-run load cannot make the guard and the
+     * verdicts disagree, and a read that could not RUN still raises
+     * {@link ReferenceUnavailableException} rather than degrading to an empty Optional. That
+     * last one matters most: an unreachable database returning "never loaded" would report an
+     * outage as a missing deployment step, which is the same conflation one layer up.
+     */
+    public Optional<LoadRecord> latestLoad(String asOf) {
+        String sql = "SELECT dataset_version, applied_row_count "
+                + "FROM " + LOAD_RELATION + " AS OF SYSTEM TIME '" + requireHlc(asOf) + "' "
+                + "ORDER BY created_at DESC LIMIT 1";
+        List<LoadRecord> found = new ArrayList<>(1);
+        query(LOAD_RELATION, sql, List.of(), rs ->
+                found.add(new LoadRecord(rs.getString("dataset_version"), rs.getInt("applied_row_count"))));
+        return found.stream().findFirst();
+    }
+
     private interface RowConsumer {
         void accept(ResultSet rs) throws SQLException;
     }
 
-    private void query(String sql, Collection<String> params, RowConsumer consumer) {
+    private void query(String relation, String sql, Collection<String> params, RowConsumer consumer) {
         // Own connection: the AS OF read must not join the tasklet's read-write tx.
         try (Connection connection = dataSource.getConnection();
              PreparedStatement ps = connection.prepareStatement(sql)) {
@@ -109,8 +138,8 @@ public class ReferenceSnapshotDao {
             // operator greps for; "42P01 relation does not exist" and "08001 connection
             // refused" are the two shapes this actually takes in dcre_col today.
             log.error("reference-store-unavailable stage=CTV relation={} sqlState={} reason={}",
-                    ACCOUNT_RELATION, e.getSQLState(), e.getMessage());
-            throw new ReferenceUnavailableException(ACCOUNT_RELATION, e);
+                    relation, e.getSQLState(), e.getMessage());
+            throw new ReferenceUnavailableException(relation, e);
         }
     }
 

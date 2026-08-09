@@ -91,6 +91,7 @@ class CtvPartitionDeterminismIT {
         entry(jdbc, arrival, 9, "E2E-DET-9", mainAccount, "CT-DET-1", "300.00", "H-9");
         entry(jdbc, arrival, 10, "E2E-DET-10", mainAccount, "CT-DET-1", "400.00", "H-10");
         CtvTestTables.insertHeader(jdbc, arrival, 10);
+        CtvTestTables.materialiseAccountReference(jdbc);
 
         JobExecution run = jobOperator.start(ctvJob, new JobParametersBuilder()
                 .addString("arrival.id", arrival.toString(), true)

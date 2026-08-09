@@ -11,6 +11,7 @@ import java.util.List;
 import java.util.Set;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
@@ -31,9 +32,25 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
  */
 class RealAccountArtifactTest {
 
-    /** The committed dev defaults from application.yml, deliberately duplicated so a drift shows. */
+    /**
+     * The committed SOURCE of the artifact in git, which is what this test parses. It is
+     * NOT the runtime default any more: infra validates this directory and stages a copy
+     * into the exchange root, and the service reads the staged copy. Both are asserted
+     * below, separately, because they answer different questions.
+     */
     private static final String ROOT = "../../../../../../infra/dcre-infra/fixtures/reference/account";
     private static final String DATASET_VERSION = "2026.08.09-001";
+
+    /**
+     * The committed RUNTIME default, deliberately duplicated so a drift shows. It derives
+     * from DCRE_EXCHANGE_ROOT, which is already injected into every stage pod as
+     * {@code /exchange}, so the default resolves to {@code /exchange/reference/account} in a
+     * pod with no new AGT env injection. The previous default was a six-hop relative path
+     * into the git fixtures directory, which resolves only on a developer's machine: in a
+     * pod the loader could never have found the artifact at all.
+     */
+    private static final String CONFIGURED_ROOT =
+            "${DCRE_EXCHANGE_ROOT:../../../../../../infra/dcre-infra/exchange}/reference/account";
 
     private static final String YML = "src/main/resources/application.yml";
 
@@ -42,8 +59,13 @@ class RealAccountArtifactTest {
         // Without this, the constants above could drift from the yml and every assertion
         // below would keep passing about an artifact nothing is configured to read.
         String yml = Files.readString(Path.of(YML));
-        assertTrue(yml.contains("DCRE_CTV_ACCOUNT_REFERENCE_ROOT:" + ROOT),
-                "application.yml must default the reference root to " + ROOT);
+        assertTrue(yml.contains("DCRE_CTV_ACCOUNT_REFERENCE_ROOT:" + CONFIGURED_ROOT),
+                "application.yml must default the reference root to " + CONFIGURED_ROOT
+                        + "; a default that only resolves on a developer's machine is the defect"
+                        + " this assertion exists to catch");
+        assertFalse(yml.contains("DCRE_CTV_ACCOUNT_REFERENCE_ROOT:" + ROOT),
+                "the reference root must NOT default into the git fixtures directory: that path"
+                        + " cannot exist in a pod");
         assertTrue(yml.contains("DCRE_CTV_ACCOUNT_DATASET_VERSION:" + DATASET_VERSION),
                 "application.yml must default the dataset version to " + DATASET_VERSION);
         // An UNCOMMENTED max-age line only. The committed file carries a comment saying it
