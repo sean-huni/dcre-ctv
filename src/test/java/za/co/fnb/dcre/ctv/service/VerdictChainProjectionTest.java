@@ -3,30 +3,26 @@ package za.co.fnb.dcre.ctv.service;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.ValueSource;
-import za.co.fnb.dcre.ctv.domain.MandateSource;
 import za.co.fnb.dcre.ctv.service.VerdictChain.Account;
 import za.co.fnb.dcre.ctv.service.VerdictChain.Entry;
-import za.co.fnb.dcre.ctv.service.VerdictChain.Mandate;
 import za.co.fnb.dcre.ctv.service.VerdictChain.MandateProjection;
 import za.co.fnb.dcre.platform.model.CtvOutcome;
 
 import java.math.BigDecimal;
 import java.time.LocalDate;
-import java.util.List;
 import java.util.Map;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 
 /**
- * M10 T15 (SCRUM-78, Sean directive: key on MANDATE_REF): the DC-flow mandate
- * gate under {@link MandateSource#PROJECTION}. The projection is looked up by the
+ * SCRUM-107: the DC-flow mandate gate, which now has exactly ONE backing. The
+ * projection is looked up by the
  * entry's {@code mandateRef} (never the account/contract pair) and its state IS
  * the gate (R-10): only {@code ACCP} may be collected against; every other state
  * and an absent projection row reject with {@code FAIL_MANDATE_NOT_ACTIVE}. An
  * entry with a NULL mandate_ref (a collection not targeting a mandate, e.g. an
  * old-layout V1/V2 book) is a mandate-gate no-op: the account/cap tier stands but
- * the mandate tier passes. The legacy dcre_col gate is unchanged and the toggle is
- * proved head-to-head. ENDO (dcFlow=false) has no mandate gate either way.
+ * the mandate tier passes. ENDO (dcFlow=false) has no mandate gate at all.
  */
 class VerdictChainProjectionTest {
 
@@ -39,7 +35,6 @@ class VerdictChainProjectionTest {
     private static final Map<String, Account> ACCOUNTS = Map.of(
             ACCOUNT, new Account(ACCOUNT, "FNBCC", null, new BigDecimal("100000.00"), "ACTIVE"));
 
-    private static final Map<String, List<Mandate>> NO_LEGACY = Map.of();
     private static final Map<String, MandateProjection> NO_PROJECTION = Map.of();
 
     private static Entry entry() {
@@ -57,15 +52,8 @@ class VerdictChainProjectionTest {
                 new BigDecimal("100000.00")));
     }
 
-    /** A legacy dcre_col mandate row keyed by account (matched by contract_ref). */
-    private static Map<String, List<Mandate>> legacyByAccount(final String status) {
-        return Map.of(ACCOUNT, List.of(new Mandate(CONTRACT, status,
-                LocalDate.parse("2026-01-01"), LocalDate.parse("2027-01-01"),
-                new BigDecimal("100000.00"))));
-    }
-
     private static CtvOutcome projection(final Entry entry, final Map<String, MandateProjection> byRef) {
-        return VerdictChain.classify(entry, ACCOUNTS, NO_LEGACY, byRef, TODAY, true, MandateSource.PROJECTION);
+        return VerdictChain.classify(entry, ACCOUNTS, byRef, true);
     }
 
     @Test
@@ -103,27 +91,10 @@ class VerdictChainProjectionTest {
     }
 
     @Test
-    void legacyGateUnchangedActiveStatusPasses() {
-        CtvOutcome outcome = VerdictChain.classify(entry(), ACCOUNTS, legacyByAccount("ACTIVE"),
-                NO_PROJECTION, TODAY, true, MandateSource.LEGACY);
-        assertEquals(CtvOutcome.PASS, outcome);
-    }
-
-    @Test
-    void toggleIsHeadToHead_accpIsLegacyInactiveButProjectionActive() {
-        // The same "ACCP" value: meaningless to the legacy status gate (which
-        // expects ACTIVE) yet the sole pass under the projection gate.
-        assertEquals(CtvOutcome.FAIL_MANDATE_NOT_ACTIVE, VerdictChain.classify(entry(),
-                ACCOUNTS, legacyByAccount("ACCP"), NO_PROJECTION, TODAY, true, MandateSource.LEGACY));
-        assertEquals(CtvOutcome.PASS, projection(entry(), projectionByRef("ACCP")));
-    }
-
-    @Test
-    void endoFlowHasNoMandateGateUnderProjection() {
+    void endoFlowHasNoMandateGate() {
         // dcFlow=false short-circuits before the mandate layer (R-20): the
         // projection gate never runs for collections-endo.
-        CtvOutcome outcome = VerdictChain.classify(entry(), ACCOUNTS, NO_LEGACY, NO_PROJECTION,
-                TODAY, false, MandateSource.PROJECTION);
+        CtvOutcome outcome = VerdictChain.classify(entry(), ACCOUNTS, NO_PROJECTION, false);
         assertEquals(CtvOutcome.PASS, outcome);
     }
 }

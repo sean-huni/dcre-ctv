@@ -31,8 +31,9 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
  * in the MSR-owned {@code man_ctv_view}: only an {@code ACCP} projection is
  * collectable, a non-ACCP state and an unknown mandate_ref reject with
  * {@code FAIL_MANDATE_NOT_ACTIVE}, and a NULL mandate_ref is a mandate-gate no-op
- * (the account tier still stands). The legacy dcre_col table is never read in this
- * mode. The head-to-head legacy path is covered by CtvManifestParityTest (30/30).
+ * (the account tier still stands). SCRUM-107: there is no longer a legacy dcre_col
+ * table or a head-to-head to run against it; CtvManifestParityTest now pins the
+ * account and duplicate tiers only.
  */
 @SpringBootTest(properties = {"spring.batch.job.enabled=false",
         "dcre.exchange-root=build/test-exchange", "dcre.ctv.mandate-source=projection"})
@@ -113,6 +114,7 @@ class CtvProjectionGateIT {
         insertEntry(arrival, 3, "E2E-P-3", null);          // NULL mandate_ref -> gate no-op -> PASS
         insertEntry(arrival, 4, "E2E-P-4", "MND-UNKNOWN"); // absent projection -> reject
         CtvTestTables.insertHeader(jdbc, arrival, 4, "FNBCC01");
+        CtvTestTables.materialiseAccountReference(jdbc);
 
         JobExecution run = jobOperator.start(ctvJob, new JobParametersBuilder()
                 .addString("arrival.id", arrival.toString(), true)

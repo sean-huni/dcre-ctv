@@ -58,7 +58,6 @@ public class AcceptanceModeSteps {
         String account = "6305" + suffix;
         String contract = "CT-AM-" + suffix.substring(0, 6);
         CtvTestTables.insertAccount(jdbc, account, "FNBRF", "5000.00", "ACTIVE");
-        CtvTestTables.insertMandate(jdbc, account, contract, "ACTIVE", "2026-01-01", "none", "1000.00");
         String hash = "HASH-DUP-" + suffix;
         CtvTestTables.insertEntry(jdbc, arrival, 1, e2e(1), account, contract, "100.00", hash);
         // same essential content, fresh e2e: the R-41 content clash
@@ -73,7 +72,6 @@ public class AcceptanceModeSteps {
         String account = "6306" + suffix;
         String contract = "CT-AM-" + suffix.substring(0, 6);
         CtvTestTables.insertAccount(jdbc, account, "FNBRF", "5000.00", "ACTIVE");
-        CtvTestTables.insertMandate(jdbc, account, contract, "ACTIVE", "2026-01-01", "none", "1000.00");
         CtvTestTables.insertEntry(jdbc, arrival, 1, e2e(1), account, contract, "100.00", "HASH-A-" + suffix);
         CtvTestTables.insertEntry(jdbc, arrival, 2, e2e(2), account, contract, "200.00", "HASH-B-" + suffix);
         CtvTestTables.insertHeader(jdbc, arrival, 2, clientToken);
@@ -81,6 +79,7 @@ public class AcceptanceModeSteps {
 
     @When("the CTV job runs for the arrival")
     public void runJob() throws Exception {
+        CtvTestTables.materialiseAccountReference(jdbc);
         execution = jobOperator.start(ctvJob, new JobParametersBuilder()
                 .addString("arrival.id", arrival.toString(), true)
                 .toJobParameters());

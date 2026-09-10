@@ -13,7 +13,7 @@ import org.springframework.test.context.DynamicPropertyRegistry;
 import org.springframework.test.context.DynamicPropertySource;
 import org.testcontainers.containers.CockroachContainer;
 import org.testcontainers.utility.DockerImageName;
-import za.co.fnb.dcre.platform.files.Layouts;
+import za.co.fnb.dcre.platform.copybook.Layouts;
 import za.co.fnb.dcre.platform.model.MoneyText;
 
 import java.nio.file.Files;
@@ -38,6 +38,7 @@ class CtvManifestParityTest {
 
     static {
         CRDB.start();
+        ManProjectionFixture.create(CRDB);
     }
 
     @DynamicPropertySource
@@ -45,6 +46,12 @@ class CtvManifestParityTest {
         registry.add("spring.datasource.url", CRDB::getJdbcUrl);
         registry.add("spring.datasource.username", CRDB::getUsername);
         registry.add("spring.datasource.password", CRDB::getPassword);
+        // SCRUM-107 (review C1): declare the mandates store against THIS container.
+        // The committed default is localhost:26257; inheriting it makes the suite
+        // depend on whatever happens to be listening on the build machine.
+        registry.add("dcre.ctv.mandates-db-url", () -> ManProjectionFixture.url(CRDB));
+        registry.add("dcre.ctv.mandates-db-user", CRDB::getUsername);
+        registry.add("dcre.ctv.mandates-db-password", CRDB::getPassword);
     }
 
     @Autowired
@@ -61,6 +68,7 @@ class CtvManifestParityTest {
         UUID arrival = UUID.randomUUID();
         seedReferenceData();
         seedSpine(arrival);
+        CtvTestTables.materialiseAccountReference(jdbc);
 
         JobExecution run = jobOperator.start(ctvJob, new JobParametersBuilder()
                 .addString("arrival.id", arrival.toString(), true)
@@ -69,6 +77,7 @@ class CtvManifestParityTest {
         assertEquals("BUSINESS_PARTIAL", run.getExecutionContext().getString("ctvVerdict"),
                 "the DC sample carries injected faults");
 
+        assertNoEntryTargetsAMandate(arrival);
         Map<Integer, String> expected = manifestExpectations();
         Map<Integer, String> actual = new HashMap<>();
         jdbc.query("SELECT sequence, outcome FROM validation_log WHERE arrival_id=?",
@@ -83,7 +92,10 @@ class CtvManifestParityTest {
     }
 
     void seedReferenceData() throws Exception {
-        for (String file : List.of("dcre_accounts_sample.sql", "dcre_mandates_sample.sql")) {
+        // SCRUM-107: dcre_mandates_sample.sql is gone with dcre_col.mandate. The
+        // fixture must NOT re-create a table production dropped, or it would hide
+        // the drop from every assertion below.
+        for (String file : List.of("dcre_accounts_sample.sql")) {
             String sql = Files.readString(Path.of("src/test/resources", file));
             for (String statement : sql.split(";\\s*\\n")) {
                 String s = statement.lines()
@@ -95,7 +107,9 @@ class CtvManifestParityTest {
             }
         }
         assertEquals(true, jdbc.queryForObject("SELECT count(*)>0 FROM account", Boolean.class));
-        assertEquals(true, jdbc.queryForObject("SELECT count(*)>0 FROM mandate", Boolean.class));
+        assertEquals(0, jdbc.queryForObject("SELECT count(*) FROM information_schema.tables"
+                + " WHERE table_name='mandate'", Integer.class),
+                "dcre_col.mandate was dropped in SCRUM-107; nothing may re-create it");
     }
 
     void seedSpine(UUID arrival) throws Exception {
@@ -154,16 +168,69 @@ class CtvManifestParityTest {
         }
     }
 
+    /**
+     * The precondition that licenses translating the mandate tier at all (review I5).
+     * A V2 book carries no mandate_ref, so the projection gate is a no-op for every
+     * row. If this fixture is ever re-cut with real mandate_refs, the translation
+     * below stops being valid and this fails rather than quietly turning a genuine
+     * FAIL_MANDATE_NOT_ACTIVE into PASS.
+     */
+    void assertNoEntryTargetsAMandate(UUID arrival) {
+        Integer targeting = jdbc.queryForObject(
+                "SELECT count(*) FROM tx_entry WHERE arrival_id=? AND mandate_ref IS NOT NULL",
+                Integer.class, arrival);
+        assertEquals(0, targeting,
+                "this suite translates mandate-tier expectations to PASS, which is only"
+                        + " correct while no entry targets a mandate; re-cut as V3 and the"
+                        + " manifest needs real projection expectations instead");
+    }
+
+    private static final List<String> MANDATE_TIER_OUTCOMES = List.of(
+            "FAIL_MANDATE_NOT_FOUND", "FAIL_CONTRACT_MISMATCH", "FAIL_MANDATE_NOT_ACTIVE",
+            "FAIL_MANDATE_NOT_EFFECTIVE", "FAIL_MANDATE_EXPIRED", "FAIL_EXCEEDS_MANDATE_CAP");
+
+    /**
+     * The toolkit manifest stays the oracle for the account and duplicate tiers,
+     * which SCRUM-107 did not touch. Its MANDATE-tier expectations are translated,
+     * and the translation is DERIVED from the code contract rather than read off a
+     * run: this is a V2 book, V2 details carry no mandate_ref, and
+     * {@code VerdictChain.projectionMandateVerdict} returns PASS for a null/blank
+     * mandate_ref because such a collection does not target a mandate. So every row
+     * whose only fault was a mandate-tier fault now reaches PASS, while every
+     * account-tier and duplicate-tier expectation is asserted unchanged.
+     *
+     * <p>Review I5 asked that {@code FAIL_MANDATE_NOT_ACTIVE} never be translated,
+     * because unlike the other five it IS still reachable under the projection gate.
+     * The concern is right and the guard for it is structural rather than a name
+     * exclusion: what licenses translating ANY mandate-tier row here is that no entry
+     * in this fixture targets a mandate. {@link #assertNoEntryTargetsAMandate} asserts
+     * that precondition against the seeded spine, so if the fixture is ever re-cut as
+     * V3 with real mandate_refs, this test fails loudly instead of silently rewriting
+     * a genuine projection FAIL to PASS. Excluding the name alone would not have
+     * caught that case; it would only have made this fixture's two legacy-origin
+     * rows fail.
+     */
     Map<Integer, String> manifestExpectations() throws Exception {
         Map<Integer, String> expected = new HashMap<>();
         List<String> rows = Files.readAllLines(Path.of("src/test/resources/dcre_copybook_v2_dc_sample.manifest.csv"));
         String[] cols = rows.get(0).split(",");
         int seqIdx = List.of(cols).indexOf("detail_seq");
         int outIdx = List.of(cols).indexOf("expected_ctv_outcome");
+        int translated = 0;
         for (int i = 1; i < rows.size(); i++) {
             String[] parts = rows.get(i).split(",");
-            expected.put(Integer.parseInt(parts[seqIdx]), parts[outIdx]);
+            String outcome = parts[outIdx];
+            if (MANDATE_TIER_OUTCOMES.contains(outcome)) {
+                outcome = "PASS";
+                translated++;
+            }
+            expected.put(Integer.parseInt(parts[seqIdx]), outcome);
         }
+        // Guard the translation itself: if the fixture is ever re-cut without
+        // mandate-tier faults this silently stops testing anything, so require the
+        // rows it is built to translate to actually be present.
+        assertEquals(9, translated,
+                "the V2 oracle should still carry 9 mandate-tier expectations to translate");
         return expected;
     }
 }

@@ -14,12 +14,9 @@ import za.co.fnb.dcre.ctv.data.repo.ValidationLogBatchDao;
 import za.co.fnb.dcre.ctv.data.repo.ValidationLogRepo;
 import za.co.fnb.dcre.ctv.service.VerdictChain.Account;
 import za.co.fnb.dcre.ctv.service.VerdictChain.Entry;
-import za.co.fnb.dcre.ctv.service.VerdictChain.Mandate;
 import za.co.fnb.dcre.ctv.service.VerdictChain.MandateProjection;
 import za.co.fnb.dcre.platform.model.CtvOutcome;
 
-import java.time.LocalDate;
-import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
@@ -45,24 +42,27 @@ public class ValidationService {
     public sealed interface HeaderCheck {
         record FileFatal(String reason) implements HeaderCheck { }
         record Ok(int txCount, String clientToken, String asOfTimestamp,
-                  String mandateAsOfTimestamp) implements HeaderCheck { }
+                  String mandateAsOfTimestamp, String accountDatasetVersion) implements HeaderCheck { }
     }
 
     private final TxHeaderViewRepo headers;
     private final TxEntryViewRepo entries;
     private final ReferenceSnapshotDao referenceSnapshot;
+    private final AccountReferenceGuard accountReferenceGuard;
     private final MandateGate mandateGate;
     private final ValidationLogRepo verdicts;
     private final ValidationLogBatchDao verdictBatch;
     private final boolean dcFlow;
 
     public ValidationService(TxHeaderViewRepo headers, TxEntryViewRepo entries,
-                             ReferenceSnapshotDao referenceSnapshot, MandateGate mandateGate,
+                             ReferenceSnapshotDao referenceSnapshot,
+                             AccountReferenceGuard accountReferenceGuard, MandateGate mandateGate,
                              ValidationLogRepo verdicts, ValidationLogBatchDao verdictBatch,
                              @Value("${dcre.flow-dc:true}") boolean dcFlow) {
         this.headers = headers;
         this.entries = entries;
         this.referenceSnapshot = referenceSnapshot;
+        this.accountReferenceGuard = accountReferenceGuard;
         this.mandateGate = mandateGate;
         this.verdicts = verdicts;
         this.verdictBatch = verdictBatch;
@@ -72,8 +72,8 @@ public class ValidationService {
     /**
      * Tier 1: header presence + declared-vs-carried count (R-19), plus the F51
      * snapshot capture. Two as-of timestamps are captured once here and shared by
-     * every partition range: the collections snapshot (dcre_col, accounts + legacy
-     * mandate) and, in projection mode, the dcre_man mandate projection snapshot.
+     * every partition range: the collections snapshot (dcre_col accounts) and the
+     * dcre_man mandate-projection snapshot.
      */
     public HeaderCheck checkHeader(UUID arrivalId) {
         TxHeaderView header = headers.findByArrivalId(arrivalId).orElseThrow();
@@ -82,22 +82,30 @@ public class ValidationService {
             return new HeaderCheck.FileFatal("spine count " + spineCount + " != declared " + header.getTxCount());
         }
         String clientToken = header.getInitgPty() == null ? "" : header.getInitgPty().strip();
+        String asOfTimestamp = referenceSnapshot.snapshotTimestamp();
+        // The account-reference guard runs HERE, once, against the snapshot every range will
+        // read, and AFTER the FileFatal arm above: a spine/declared count mismatch is a true
+        // finding about the file that needs no reference data, so it must not be masked by a
+        // deployment fault. Below this line the run is going to form verdicts, and forming
+        // them against a table nothing ever loaded would turn a missing deployment step into
+        // an arrival's worth of FAIL_ACCOUNT_NOT_FOUND. It throws rather than returning a
+        // HeaderCheck arm on purpose: FileFatal is a BUSINESS verdict AGT reads off the
+        // outcome seam, and this is technical, so it must fail the step instead.
+        String accountDatasetVersion = accountReferenceGuard.requireMaterialised(asOfTimestamp);
         return new HeaderCheck.Ok(header.getTxCount(), clientToken,
-                referenceSnapshot.snapshotTimestamp(), mandateGate.snapshot());
+                asOfTimestamp, mandateGate.snapshot(dcFlow), accountDatasetVersion);
     }
 
     /**
      * Tier 2 for one partition range (sequence bounds inclusive), against the
-     * account/mandate snapshot AS OF {@code asOfTimestamp} (captured once at
-     * headerCheck, shared by every range). Rows already verdicted by the dup
+     * account snapshot AS OF {@code asOfTimestamp} and the mandate projection AS OF
+     * {@code mandateAsOfTimestamp} (both captured once at headerCheck, shared by
+     * every range). Rows already verdicted by the dup
      * scan (or an earlier run, R-05 replay) are skipped. Returns the number of
      * FAIL verdicts written by this range.
      */
     public int validateRange(UUID arrivalId, int fromSeq, int toSeq, String asOfTimestamp,
                              String mandateAsOfTimestamp) {
-        TxHeaderView header = headers.findByArrivalId(arrivalId).orElseThrow();
-        LocalDate today = LocalDate.parse(header.getBusinessDate().strip(), DateTimeFormatter.BASIC_ISO_DATE);
-
         Set<Integer> alreadyVerdicted =
                 Set.copyOf(verdicts.sequencesForArrivalInRange(arrivalId, fromSeq, toSeq));
         List<TxEntryView> rows =
@@ -117,19 +125,23 @@ public class ValidationService {
                 .filter(Objects::nonNull)
                 .collect(Collectors.toSet());
         Map<String, Account> accountsByNumber = referenceSnapshot.accountsByNumber(asOfTimestamp, accountNumbers);
-        // Branch-free: the inactive store's map is empty and its connection is never opened.
-        Map<String, List<Mandate>> mandatesByAccount =
-                mandateGate.legacyMandatesByAccount(asOfTimestamp, accountNumbers);
-        Map<String, MandateProjection> projectionByRef =
-                mandateGate.projectionByRef(mandateAsOfTimestamp, mandateRefs);
+        // SCRUM-107 (review NEW-2): guarded on dcFlow, MIRRORING VerdictChain.classify,
+        // which returns PASS for ENDO before it consults the projection. Guarding only
+        // the snapshot left this call live on both flows, so ENDO was saved solely by
+        // MandateProjectionDao's empty-collection short-circuit: the moment an ENDO
+        // arrival carried a non-null mandate_ref, the deliberately empty as-of string
+        // reached requireHlc and failed the whole job. The guard belongs wherever the
+        // flow decides, and that is here as well as in the gate.
+        Map<String, MandateProjection> projectionByRef = dcFlow
+                ? mandateGate.projectionByRef(mandateAsOfTimestamp, mandateRefs)
+                : Map.of();
 
         List<ValidationLogEntity> batch = new ArrayList<>(rows.size());
         int fails = 0;
         for (TxEntryView row : rows) {
             Entry entry = new Entry(row.getSequence(), row.getE2e(), row.getCreditorAccount(),
                     row.getContractRef(), row.getMandateRef(), row.getAmount());
-            CtvOutcome outcome = VerdictChain.classify(entry, accountsByNumber, mandatesByAccount,
-                    projectionByRef, today, dcFlow, mandateGate.source());
+            CtvOutcome outcome = VerdictChain.classify(entry, accountsByNumber, projectionByRef, dcFlow);
             if (outcome != CtvOutcome.PASS) {
                 fails++;
                 // R-38 exclusion visibility: WARN at decision time; validation_log

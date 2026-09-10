@@ -1,48 +1,50 @@
 package za.co.fnb.dcre.ctv.service;
 
-import za.co.fnb.dcre.ctv.domain.MandateSource;
 import za.co.fnb.dcre.platform.model.CtvOutcome;
 import za.co.fnb.dcre.platform.model.ProductType;
 
 import java.math.BigDecimal;
 import java.time.LocalDate;
-import java.util.List;
 import java.util.Map;
 
 /**
  * The R-19 item-tier precedence chain, ported from the fixture toolkit's
  * verifier classify() (the dev-normative oracle under R-35):
- * account exists -> account active -> account cap ->
- * mandate exists -> contract match -> mandate status -> effective ->
- * expiry -> mandate cap. Mandate layer applies to the DC flow only.
+ * account exists -> account active -> account cap -> mandate state.
+ * Mandate layer applies to the DC flow only.
  * Duplicate rules (e2e and content hash) run BEFORE this chain as the
  * set-based SQL dup scan (DupScanService, R-41); rows verdicted there are
  * never re-classified here.
- * ENDO deltas (A-20 draft, SCRUM-32) [SYNTHETIC-CONTRACT R-35]: unknown
- * account and NULL cap pass through (AIS create-if-absent downstream);
+ * ENDO delta (A-20 draft, SCRUM-32) [SYNTHETIC-CONTRACT R-35]: an EXISTING
+ * account whose cap is unset passes through (the cap check applies post-init);
  * everything else, including over-cap on existing accounts, is unchanged.
+ * An UNKNOWN account does NOT pass through, on either flow: see
+ * {@link #accountTier} for the SCRUM-107 repair and why the two arms differ.
  *
- * <p>M10 T15 (SCRUM-78, Sean directive: key on MANDATE_REF): the mandate layer
- * has two backings selected by {@link MandateSource}. {@code LEGACY} keeps the
- * full dcre_col status/effective/expiry/cap chain matched by contract_ref.
- * {@code PROJECTION} collapses the whole mandate layer to a single state check
- * against the MSR projection ({@code man_ctv_view}) looked up by the entry's
- * {@code mandateRef}: the accepted-mandate lifecycle (cancel, reject, suspend,
- * expire) is already folded into the projection state, so only {@code ACCP} may
- * be collected against and every other state or an absent projection row rejects
- * with {@code FAIL_MANDATE_NOT_ACTIVE}. An entry with a NULL mandate_ref (a
- * collection not targeting a mandate, e.g. an old-layout V1/V2 book) is a
- * mandate-gate no-op: the account/cap tier stands but the mandate tier passes.
- * Account and duplicate tiers are unchanged in either mode.
+ * <p>SCRUM-107: the mandate layer has exactly ONE backing, the mandates-owned
+ * projection {@code dcre_man.man_ctv_view}, looked up by the entry's
+ * {@code mandateRef}. The whole mandate layer is a single state check: the
+ * accepted-mandate lifecycle (cancel, reject, suspend, expire) is already folded
+ * into the projection state, so only {@code ACCP} may be collected against and
+ * every other state or an absent projection row rejects with
+ * {@code FAIL_MANDATE_NOT_ACTIVE}. An entry with a NULL mandate_ref (a collection
+ * not targeting a mandate, e.g. an old-layout V1/V2 book) is a mandate-gate
+ * no-op: the account/cap tier stands but the mandate tier passes.
+ *
+ * <p>The former {@code LEGACY} backing read {@code dcre_col.mandate}, a mandates
+ * table that lived in the collections database and that no service owned. It was
+ * dropped in {@code 2026/08/001-drop-local-mandate.xml} after the projection gate
+ * was proven on the cluster with BOTH verdicts, and its status/effective/expiry/cap
+ * chain went with it. That is why {@code FAIL_MANDATE_NOT_FOUND},
+ * {@code FAIL_CONTRACT_MISMATCH}, {@code FAIL_MANDATE_NOT_EFFECTIVE},
+ * {@code FAIL_MANDATE_EXPIRED} and {@code FAIL_EXCEEDS_MANDATE_CAP} are no longer
+ * reachable on the DC flow: the projection collapses all of them into the single
+ * state predicate above.
  */
 public final class VerdictChain {
 
     public record Account(String accountNumber, String productCode, BigDecimal balance,
                           BigDecimal maxCreditLimit, String processStatus) {
-    }
-
-    public record Mandate(String contractRef, String status, LocalDate startDate,
-                          LocalDate expiryDate, BigDecimal maxCollectionAmount) {
     }
 
     /** A row of the MSR-owned {@code man_ctv_view}, keyed for lookup by {@code mandateRef}. */
@@ -59,9 +61,8 @@ public final class VerdictChain {
     }
 
     public static CtvOutcome classify(Entry entry, Map<String, Account> accounts,
-                                      Map<String, List<Mandate>> mandatesByAccount,
                                       Map<String, MandateProjection> projectionByRef,
-                                      LocalDate today, boolean dcFlow, MandateSource mandateSource) {
+                                      boolean dcFlow) {
         CtvOutcome accountOutcome = accountTier(entry, accounts, dcFlow);
         if (accountOutcome != null) {
             return accountOutcome;
@@ -69,22 +70,47 @@ public final class VerdictChain {
         if (!dcFlow) {
             return CtvOutcome.PASS; // ENDO has no mandate gate (R-20)
         }
-        return mandateSource == MandateSource.PROJECTION
-                ? projectionMandateVerdict(entry, projectionByRef)
-                : legacyMandateVerdict(entry, mandatesByAccount, today);
+        return projectionMandateVerdict(entry, projectionByRef);
     }
 
     /**
-     * Account existence/active/cap tier (unchanged, both modes). Returns a terminal
-     * outcome, or {@code null} when the account tier passes and the mandate tier
-     * should decide.
+     * Account existence/active/cap tier. Returns a terminal outcome, or {@code null}
+     * when the account tier passes and the mandate tier should decide.
+     *
+     * <p><b>SCRUM-107: the existence check fails CLOSED on both flows.</b> An account the
+     * reference store does not hold is {@link CtvOutcome#FAIL_ACCOUNT_NOT_FOUND} on ENDO
+     * as well as on DC. It previously returned PASS on ENDO, on the A-20 draft reasoning
+     * that the account would be created downstream (create-if-absent, R-11), which left
+     * the first tier of the chain answering PASS in exactly the case it exists to catch.
+     * A control that passes when it finds nothing is not a control, and it fails
+     * silently: nothing errors and no suite goes red. The identical defect was found in
+     * {@code payments/ptv}, whose chain is a fork of this one, and is repaired the same
+     * way in both.
+     *
+     * <p><b>"Absent" is not "unreadable".</b> This method only ever sees a map, so it
+     * cannot tell the difference, and it does not have to: a reference store that could
+     * not be read never produces a map at all.
+     * {@code ReferenceSnapshotDao} raises {@code ReferenceUnavailableException} and the
+     * step fails, so a technical fault becomes a FAILED job rather than an arrival's
+     * worth of business rejections. The separation is structural, not a convention this
+     * class has to remember.
+     *
+     * <p><b>The unset-cap arm below is DELIBERATELY unchanged by that repair.</b> On ENDO
+     * an EXISTING account with an unset cap still passes: the row is present, existence
+     * and activity have both been checked, and only its limit is unset, which is a
+     * different question from existence. That is exactly what {@code payments/ptv} does
+     * after its own repair. The DC arm there is pre-existing oracle behaviour
+     * ([SYNTHETIC-CONTRACT R-35]), not part of this repair. Whether an unset cap should
+     * itself be a rejection is an account-model question, recorded not decided.
      */
     private static CtvOutcome accountTier(Entry entry, Map<String, Account> accounts, boolean dcFlow) {
         Account account = accounts.get(entry.creditorAccount());
         if (account == null) {
-            // [SYNTHETIC-CONTRACT R-35] A-20 draft: on ENDO an unknown account
-            // passes through; AIS creates it downstream (create-if-absent).
-            return dcFlow ? CtvOutcome.FAIL_ACCOUNT_NOT_FOUND : CtvOutcome.PASS;
+            // No row for this creditor account in the snapshot: a business REJECTION with
+            // its own reason, on BOTH flows. The map is only ever built from a read that
+            // SUCCEEDED, so an absence here is a fact about the store's contents, never
+            // about its reachability (see the javadoc above).
+            return CtvOutcome.FAIL_ACCOUNT_NOT_FOUND;
         }
         if (!"ACTIVE".equals(account.processStatus())) {
             return CtvOutcome.FAIL_ACCOUNT_NOT_ACTIVE;
@@ -92,9 +118,11 @@ public final class VerdictChain {
         boolean balanceCarrying = ProductType.fromProductCode(account.productCode()) == ProductType.BALANCE_CARRYING;
         BigDecimal cap = balanceCarrying ? account.balance() : account.maxCreditLimit();
         if (cap == null) {
-            // [SYNTHETIC-CONTRACT R-35] A-20 draft: on ENDO a NULL cap marks a
-            // freshly-creatable account; the cap check applies post-init, so it
-            // passes through. DC keeps the oracle's FAIL_ACCOUNT_NOT_FOUND.
+            // UNCHANGED by the SCRUM-107 repair, and stated so rather than quietly left:
+            // [SYNTHETIC-CONTRACT R-35] A-20 draft. On ENDO the row EXISTS and its limit
+            // is unset, so there is no cap to breach; unlike the absence arm above this
+            // is not the tier failing open, because existence and activity have both
+            // been checked and passed. DC keeps the oracle's FAIL_ACCOUNT_NOT_FOUND.
             return dcFlow ? CtvOutcome.FAIL_ACCOUNT_NOT_FOUND : CtvOutcome.PASS;
         }
         if (entry.amount().compareTo(cap) > 0) {
@@ -122,32 +150,4 @@ public final class VerdictChain {
                 : CtvOutcome.FAIL_MANDATE_NOT_ACTIVE;
     }
 
-    /** The legacy dcre_col status/effective/expiry/cap chain, matched by contract_ref (unchanged). */
-    private static CtvOutcome legacyMandateVerdict(Entry entry,
-                                                   Map<String, List<Mandate>> mandatesByAccount,
-                                                   LocalDate today) {
-        List<Mandate> held = mandatesByAccount.get(entry.creditorAccount());
-        Mandate mandate = held == null ? null : held.stream()
-                .filter(m -> m.contractRef().equals(entry.contractRef()))
-                .findFirst().orElse(null);
-        if (held == null || held.isEmpty()) {
-            return CtvOutcome.FAIL_MANDATE_NOT_FOUND;
-        }
-        if (mandate == null) {
-            return CtvOutcome.FAIL_CONTRACT_MISMATCH; // distinct from NOT_FOUND (R-23)
-        }
-        if (!"ACTIVE".equals(mandate.status())) {
-            return CtvOutcome.FAIL_MANDATE_NOT_ACTIVE;
-        }
-        if (mandate.startDate().isAfter(today)) {
-            return CtvOutcome.FAIL_MANDATE_NOT_EFFECTIVE;
-        }
-        if (mandate.expiryDate() != null && mandate.expiryDate().isBefore(today)) {
-            return CtvOutcome.FAIL_MANDATE_EXPIRED;
-        }
-        if (entry.amount().compareTo(mandate.maxCollectionAmount()) > 0) {
-            return CtvOutcome.FAIL_EXCEEDS_MANDATE_CAP;
-        }
-        return CtvOutcome.PASS;
-    }
 }

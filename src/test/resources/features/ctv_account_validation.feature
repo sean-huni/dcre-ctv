@@ -8,13 +8,11 @@ Feature: CTV account-level validation of inbound collection requests
 
   Scenario: Collection against an existing FNBRF account within balance
     Given a collections account "63010000000001" with product "FNBRF", cap "5000.00" and status "ACTIVE"
-    And account "63010000000001" holds an ACTIVE mandate for contract "CT-ACC-01" with maximum "5000.00"
     When CTV validates a collection of "150.00" against account "63010000000001" under contract "CT-ACC-01"
     Then the record is marked valid with outcome "PASS"
 
   Scenario: Collection amount exactly equal to the account cap
     Given a collections account "63010000000002" with product "FNBRF", cap "300.00" and status "ACTIVE"
-    And account "63010000000002" holds an ACTIVE mandate for contract "CT-ACC-02" with maximum "300.00"
     When CTV validates a collection of "300.00" against account "63010000000002" under contract "CT-ACC-02"
     Then the record is marked valid with outcome "PASS"
 
@@ -37,14 +35,14 @@ Feature: CTV account-level validation of inbound collection requests
     When CTV validates a collection of "1500.00" against account "63010000000005"
     Then the record is rejected with outcome "FAIL_EXCEEDS_CC_LIMIT"
 
-  Scenario: Collection against an account with no recorded cap on the DC flow
-    Given a collections account "63010000000006" with product "FNBCC", cap "none" and status "ACTIVE"
-    When CTV validates a collection of "100.00" against account "63010000000006"
-    Then the record is rejected with outcome "FAIL_ACCOUNT_NOT_FOUND"
+  # SCRUM-107: the "account with no recorded cap" scenario left this file rather than
+  # changing its expectation. The DC arm is unchanged (FAIL_ACCOUNT_NOT_FOUND), but
+  # chk_account_product_amount on dcre_col.account forbids that row outright, so it can
+  # no longer be reached through the table. It is asserted in VerdictChainAccountTierTest,
+  # where no table constraint stands between the test and the arm it is about.
 
   Scenario: Collection reusing an EndToEndId already seen in the file
     Given a collections account "63010000000007" with product "FNBRF", cap "5000.00" and status "ACTIVE"
-    And account "63010000000007" holds an ACTIVE mandate for contract "CT-ACC-07" with maximum "5000.00"
     When CTV validates these collections as one arrival:
       | account        | contract  | amount | e2e          |
       | 63010000000007 | CT-ACC-07 | 100.00 | E2E-DUP-0001 |

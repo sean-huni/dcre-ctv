@@ -2,6 +2,7 @@ package za.co.fnb.dcre.ctv.bddendo;
 
 import io.cucumber.spring.CucumberContextConfiguration;
 import org.springframework.boot.test.context.SpringBootTest;
+import za.co.fnb.dcre.ctv.ManProjectionFixture;
 import org.springframework.test.context.DynamicPropertyRegistry;
 import org.springframework.test.context.DynamicPropertySource;
 import org.testcontainers.containers.CockroachContainer;
@@ -28,5 +29,10 @@ public class CucumberEndoSpringConfig {
         registry.add("spring.datasource.url", CRDB::getJdbcUrl);
         registry.add("spring.datasource.username", CRDB::getUsername);
         registry.add("spring.datasource.password", CRDB::getPassword);
+        // SCRUM-107 (review C1b): deliberately a CLOSED port. ENDO has no mandate
+        // gate (R-20), so nothing here may open a dcre_man connection. If the ENDO
+        // path ever contacts the projection again, these suites go red here rather
+        // than taking collections-ENDO down whenever mandates is unreachable.
+        registry.add("dcre.ctv.mandates-db-url", () -> ManProjectionFixture.CLOSED_PORT_URL);
     }
 }

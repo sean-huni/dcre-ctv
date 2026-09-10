@@ -3,31 +3,34 @@ package za.co.fnb.dcre.ctv.domain;
 import java.util.Locale;
 
 /**
- * M10 T15 (SCRUM-78): which store backs the DC-flow mandate gate.
+ * SCRUM-107: which store backs the DC-flow mandate gate. There is now exactly ONE,
+ * {@link #PROJECTION}: the mandates-owned {@code dcre_man} projection, read through
+ * the grants-based {@code man_ctv_view} contract view (R-10). The projection state
+ * IS the gate: only {@code ACCP} is collectable.
  *
- * <ul>
- *   <li>{@link #LEGACY} - the collections-side dcre_col {@code mandate} table
- *       (the current status/effective/expiry/cap chain). Stays the default and
- *       the sole reader until the M11 legacy-mandate retirement (ruling note 1).</li>
- *   <li>{@link #PROJECTION} - the MSR-owned dcre_man projection, read through the
- *       grants-based {@code man_ctv_view} contract view (R-10). The projection
- *       state IS the gate: only {@code ACCP} is collectable.</li>
- * </ul>
- *
- * <p>The {@code dcre.ctv.mandate-source} property (values {@code legacy|projection})
- * flips it; the T16 gate env sets {@code projection} once the toolkit has seeded
- * dcre_man. Parsed via {@link #from(String)} so the lowercase property value binds
- * regardless of the ambient {@code @Value} conversion service.
+ * <p>The former {@code LEGACY} value read {@code dcre_col.mandate}, which was dropped
+ * in {@code 2026/08/001-drop-local-mandate.xml}. {@link #from(String)} therefore FAILS
+ * CLOSED on it rather than silently falling back: a pod still carrying
+ * {@code DCRE_CTV_MANDATE_SOURCE=legacy} from before the cleanout must refuse to start
+ * with a message that names the cause, because the alternative is a gate that queries a
+ * table that no longer exists and fails per-arrival, deep inside a batch run.
  */
 public enum MandateSource {
 
-    LEGACY,
     PROJECTION;
 
     public static MandateSource from(final String value) {
         if (value == null || value.isBlank()) {
-            return LEGACY;
+            return PROJECTION;
         }
-        return valueOf(value.strip().toUpperCase(Locale.ROOT));
+        final String normalised = value.strip().toUpperCase(Locale.ROOT);
+        if ("LEGACY".equals(normalised)) {
+            throw new IllegalArgumentException(
+                    "dcre.ctv.mandate-source=legacy is no longer supported (SCRUM-107): the"
+                            + " dcre_col.mandate table it read was dropped. The mandate gate reads"
+                            + " dcre_man.man_ctv_view. Unset DCRE_CTV_MANDATE_SOURCE or set it to"
+                            + " 'projection'.");
+        }
+        return valueOf(normalised);
     }
 }

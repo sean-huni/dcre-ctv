@@ -40,6 +40,10 @@ public class HeaderCheckTasklet implements Tasklet {
                 context.putString("clientToken", ok.clientToken());
                 context.putString("asOfTimestamp", ok.asOfTimestamp());
                 context.putString("mandateAsOfTimestamp", ok.mandateAsOfTimestamp());
+                // WHICH reference data this run was judged against, kept in Batch metadata so
+                // the question is answerable after the fact instead of by inspecting whatever
+                // the table happens to hold when somebody asks.
+                context.putString("accountDatasetVersion", ok.accountDatasetVersion());
             }
         }
         return RepeatStatus.FINISHED;
