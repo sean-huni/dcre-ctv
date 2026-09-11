@@ -42,6 +42,10 @@
          ============================================================================ -->
 
     <changeSet id="ctv-v1-validation-log" author="dcre">
+        <preConditions onFail="MARK_RAN">
+            <not><tableExists tableName="validation_log"/></not>
+        </preConditions>
+        
         <!--
           NO re-run guard, like every other changeset in this baseline.
 

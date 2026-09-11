@@ -35,6 +35,10 @@
          ============================================================================ -->
 
     <changeSet id="ctv-v1-account" author="dcre">
+        <preConditions onFail="MARK_RAN">
+            <not><tableExists tableName="account"/></not>
+        </preConditions>
+        
         <createTable tableName="account">
             <column name="id" type="UUID" defaultValueComputed="gen_random_uuid()">
                 <constraints primaryKey="true" nullable="false"/>
@@ -111,6 +115,12 @@
          changeset. Keeping it outside db/changelog leaves the guard armed for
          everything it is actually for. -->
     <changeSet id="ctv-v1-account-checks" author="dcre">
+        <preConditions onFail="MARK_RAN">
+            <not>
+                <sqlCheck expectedResult="3">SELECT count(*) FROM information_schema.table_constraints WHERE table_schema = current_schema() AND table_name = 'account' AND constraint_name IN ('chk_account_product', 'chk_account_product_amount', 'chk_account_amounts_nonneg')</sqlCheck>
+            </not>
+        </preConditions>
+        
         <sqlFile path="db/sql/2026/08/003-ctv-account-checks.sql"
                  relativeToChangelogFile="false" splitStatements="true" endDelimiter=";"/>
         <rollback>
