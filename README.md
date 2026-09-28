@@ -111,6 +111,8 @@ Spring Boot 4.1.0, `application.yml` only (one profile). Env overrides; this is 
 | `DCRE_AGTOPS_DB_URL` | `jdbc:postgresql://localhost:26257/agt_ops?sslmode=disable` | heartbeat datasource |
 | `DCRE_AGTOPS_DB_USER` / `DCRE_AGTOPS_DB_PASSWORD` | `root` / empty | heartbeat credentials |
 | `DCRE_FLOW_DC` | `true` | DC vs ENDO verdict semantics (A-20) |
+| `DCRE_AMOUNT_SCALE` | `2` | fleet-wide key bound as `dcre.amount-scale`; no CTV or platform source reads it (checked 2026-09-28) |
+| `DCRE_V1_ENABLED` | `false` | bound as `dcre.v1-enabled`; no CTV or platform source reads it (checked 2026-09-28) |
 | `DCRE_CTV_MAX_PARTITIONS` | `5` | R-41 validation grid size cap (clamped to cgroup-aware CPU count) |
 | `DCRE_CTV_ACCEPTANCE_MODE_DEFAULT` | `ALL_OR_NOTHING` | R-41 default acceptance mode |
 | `DCRE_CTV_MANDATE_SOURCE` | `projection` | DC-flow mandate gate source (SCRUM-78/91/107). `projection` reads `man_ctv_view` in `dcre_man` and requires state exactly `ACCP`. The retired `legacy` value read a `mandate` table in `dcre_col` that no service owned; a pod still carrying it fails closed at bean creation naming the cause. Set on every CTV stage pod by AGT from `AGT_CTV_MANDATE_SOURCE` |
